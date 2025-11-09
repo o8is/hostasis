@@ -47,10 +47,7 @@ contract MockDexRouter {
     }
 
     /// @notice Get expected output amounts
-    function getAmountsOut(
-        uint256 amountIn,
-        address[] calldata path
-    ) external pure returns (uint256[] memory amounts) {
+    function getAmountsOut(uint256 amountIn, address[] calldata path) external pure returns (uint256[] memory amounts) {
         require(path.length == 2, "Invalid path");
 
         amounts = new uint256[](2);

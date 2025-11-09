@@ -51,11 +51,7 @@ contract MockSavingsDai is ERC20 {
     }
 
     /// @notice Redeem shares for assets
-    function redeem(
-        uint256 shares,
-        address receiver,
-        address owner
-    ) external returns (uint256 assets) {
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets) {
         if (msg.sender != owner) {
             _spendAllowance(owner, msg.sender, shares);
         }

@@ -46,11 +46,7 @@ contract KeeperIncentivesTest is Test {
 
         // Deploy manager
         manager = new PostageYieldManager(
-            address(sdai),
-            address(dai),
-            address(bzz),
-            address(postageStamp),
-            address(dexRouter)
+            address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter)
         );
 
         // Setup users with sDAI
@@ -141,10 +137,9 @@ contract KeeperIncentivesTest is Test {
 
         manager.harvest();
 
-        (, , , bool active) = manager.distributionState();
+        (,,, bool active) = manager.distributionState();
         assertTrue(active, "Distribution should be active");
     }
-
 
     function test_MultipleHarvests_BeforeKeeperRuns() public {
         // Setup: Users deposit
@@ -170,7 +165,7 @@ contract KeeperIncentivesTest is Test {
         manager.harvest();
 
         // Check distribution is active
-        (uint256 totalBZZ1, , , bool active1) = manager.distributionState();
+        (uint256 totalBZZ1,,, bool active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
         uint256 keeperFeePool1 = manager.keeperFeePool();
         assertGt(keeperFeePool1, 0, "Keeper fee pool should have fees from first harvest");
@@ -185,7 +180,7 @@ contract KeeperIncentivesTest is Test {
         manager.harvest();
 
         // Verify distribution is still active and BZZ accumulated
-        (uint256 totalBZZ2, , , bool active2) = manager.distributionState();
+        (uint256 totalBZZ2,,, bool active2) = manager.distributionState();
         assertTrue(active2, "Distribution should still be active after second harvest");
         assertGt(totalBZZ2, totalBZZ1, "BZZ should accumulate from multiple harvests");
 
@@ -200,7 +195,7 @@ contract KeeperIncentivesTest is Test {
         vm.prank(harvester3);
         manager.harvest();
 
-        (uint256 totalBZZ3, , , bool active3) = manager.distributionState();
+        (uint256 totalBZZ3,,, bool active3) = manager.distributionState();
         assertTrue(active3, "Distribution should still be active after third harvest");
         assertGt(totalBZZ3, totalBZZ2, "BZZ should further accumulate");
 
@@ -212,7 +207,7 @@ contract KeeperIncentivesTest is Test {
         manager.processBatch(2);
 
         // Verify distribution completed
-        (, , , bool active4) = manager.distributionState();
+        (,,, bool active4) = manager.distributionState();
         assertFalse(active4, "Distribution should be complete");
 
         // Verify stamps received all accumulated BZZ
@@ -224,7 +219,6 @@ contract KeeperIncentivesTest is Test {
         assertApproxEqRel(aliceStampBalance, expectedPerUser, 0.01e18, "Alice stamp should receive correct BZZ");
         assertApproxEqRel(bobStampBalance, expectedPerUser, 0.01e18, "Bob stamp should receive correct BZZ");
     }
-
 
     /*//////////////////////////////////////////////////////////////
                         BATCH PROCESSING TESTS
@@ -331,14 +325,14 @@ contract KeeperIncentivesTest is Test {
         sdai.setExchangeRate(1.2e18);
         manager.harvest();
 
-        (, , , bool activeBefore) = manager.distributionState();
+        (,,, bool activeBefore) = manager.distributionState();
         assertTrue(activeBefore, "Distribution should be active before processing");
 
         // Process all users
         vm.prank(keeper1);
         manager.processBatch(100); // Large batch size to complete
 
-        (, , , bool activeAfter) = manager.distributionState();
+        (,,, bool activeAfter) = manager.distributionState();
         assertFalse(activeAfter, "Distribution should be inactive after completion");
     }
 
@@ -370,7 +364,7 @@ contract KeeperIncentivesTest is Test {
     }
 
     function test_GetBatchIncentive_ZeroWhenNoDistribution() public {
-        (bool canProcess, uint256 estimatedReward, ) = manager.getBatchIncentive(10);
+        (bool canProcess, uint256 estimatedReward,) = manager.getBatchIncentive(10);
         assertFalse(canProcess, "Should not be able to process");
         assertEq(estimatedReward, 0, "Incentive should be zero with no distribution");
     }
@@ -390,7 +384,7 @@ contract KeeperIncentivesTest is Test {
         // Keeper pool should be empty
         assertEq(manager.keeperFeePool(), 0, "Keeper pool should be empty");
 
-        (bool canProcess, uint256 estimatedReward, ) = manager.getBatchIncentive(10);
+        (bool canProcess, uint256 estimatedReward,) = manager.getBatchIncentive(10);
         assertFalse(canProcess, "Should not be able to process");
         assertEq(estimatedReward, 0, "Incentive should be zero when insufficient fees");
     }
@@ -507,7 +501,7 @@ contract KeeperIncentivesTest is Test {
         uint256 keeperFeePoolAfterHarvest = manager.keeperFeePool();
         assertGt(keeperFeePoolAfterHarvest, 0, "Keeper fee pool should have funds");
 
-        (uint256 totalBZZ, , , bool active) = manager.distributionState();
+        (uint256 totalBZZ,,, bool active) = manager.distributionState();
         assertTrue(active, "Distribution should be active");
         assertGt(totalBZZ, 0, "Should have BZZ to distribute");
 
@@ -530,7 +524,7 @@ contract KeeperIncentivesTest is Test {
         assertGt(keeper2AfterBatch, keeper2InitialBalance, "Keeper2 should earn fees");
 
         // 6. Distribution should be complete
-        (, , , bool stillActive) = manager.distributionState();
+        (,,, bool stillActive) = manager.distributionState();
         assertFalse(stillActive, "Distribution should be complete");
 
         // 7. Verify BZZ was distributed to stamps
@@ -603,7 +597,7 @@ contract KeeperIncentivesTest is Test {
         manager.processBatch(batchSize);
 
         // Should either complete or make progress
-        (, uint256 cursor, , bool active) = manager.distributionState();
+        (, uint256 cursor,, bool active) = manager.distributionState();
 
         if (!active) {
             // Distribution completed - state is deleted, so cursor will be 0
@@ -642,7 +636,9 @@ contract KeeperIncentivesTest is Test {
 
         // Harvester should receive fee (default 50 bps = 0.5%)
         uint256 expectedFee = (20e18 * 50) / 10000; // 0.5% of 20 DAI = 0.1 DAI
-        assertApproxEqRel(harvesterBalanceAfter - harvesterBalanceBefore, expectedFee, 0.01e18, "Harvester should receive ~0.5% fee");
+        assertApproxEqRel(
+            harvesterBalanceAfter - harvesterBalanceBefore, expectedFee, 0.01e18, "Harvester should receive ~0.5% fee"
+        );
     }
 
     function test_Harvest_EmitsHarvesterFeePaidEvent() public {
@@ -667,7 +663,9 @@ contract KeeperIncentivesTest is Test {
         for (uint256 i = 0; i < entries.length; i++) {
             if (entries[i].topics[0] == keccak256("HarvesterFeePaid(address,uint256)")) {
                 found = true;
-                assertEq(address(uint160(uint256(entries[i].topics[1]))), harvester, "Event should have correct harvester");
+                assertEq(
+                    address(uint160(uint256(entries[i].topics[1]))), harvester, "Event should have correct harvester"
+                );
                 break;
             }
         }
@@ -693,7 +691,7 @@ contract KeeperIncentivesTest is Test {
         // Check that distribution has the correct amount of BZZ
         // The mock router does 1:2 swap (1 DAI = 2 BZZ)
         uint256 expectedBZZ = daiToSwap * 2;
-        (uint256 totalBZZ, , , ) = manager.distributionState();
+        (uint256 totalBZZ,,,) = manager.distributionState();
         assertApproxEqRel(totalBZZ, expectedBZZ, 0.01e18, "BZZ amount should reflect both fee deductions");
     }
 
@@ -718,7 +716,9 @@ contract KeeperIncentivesTest is Test {
         uint256 harvesterBalanceAfter = dai.balanceOf(harvester);
         uint256 expectedFee = (10e18 * 100) / 10000; // 1% of 10 DAI = 0.1 DAI
 
-        assertApproxEqRel(harvesterBalanceAfter - harvesterBalanceBefore, expectedFee, 0.01e18, "Fee should be ~1% of yield");
+        assertApproxEqRel(
+            harvesterBalanceAfter - harvesterBalanceBefore, expectedFee, 0.01e18, "Fee should be ~1% of yield"
+        );
     }
 
     function test_Harvest_ZeroHarvesterFee() public {
@@ -769,7 +769,9 @@ contract KeeperIncentivesTest is Test {
 
         // Check harvester fee (1% of 50 DAI = 0.5 DAI)
         uint256 expectedHarvesterFee = (50e18 * 100) / 10000;
-        assertApproxEqRel(harvesterBalanceAfter - harvesterBalanceBefore, expectedHarvesterFee, 0.01e18, "Harvester fee incorrect");
+        assertApproxEqRel(
+            harvesterBalanceAfter - harvesterBalanceBefore, expectedHarvesterFee, 0.01e18, "Harvester fee incorrect"
+        );
 
         // Check keeper fee (2% of 50 DAI = 1 DAI)
         uint256 expectedKeeperFee = (50e18 * 200) / 10000;
@@ -778,7 +780,7 @@ contract KeeperIncentivesTest is Test {
         // Check BZZ amount (should be (50 - 0.5 - 1) * 2 = 97 DAI worth, because 1 DAI = 2 BZZ)
         uint256 expectedDaiToSwap = 50e18 - expectedHarvesterFee - expectedKeeperFee;
         uint256 expectedBZZ = expectedDaiToSwap * 2; // Mock router does 1:2 swap
-        (uint256 totalBZZ, , , ) = manager.distributionState();
+        (uint256 totalBZZ,,,) = manager.distributionState();
         assertApproxEqRel(totalBZZ, expectedBZZ, 0.01e18, "BZZ amount should reflect both fee deductions");
     }
 

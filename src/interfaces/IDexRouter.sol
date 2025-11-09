@@ -24,8 +24,5 @@ interface IDexRouter {
     /// @param amountIn Amount of input tokens
     /// @param path Array of token addresses representing the swap path
     /// @return amounts Array of amounts for each step in the swap path
-    function getAmountsOut(
-        uint256 amountIn,
-        address[] calldata path
-    ) external view returns (uint256[] memory amounts);
+    function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
 }

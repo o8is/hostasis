@@ -68,13 +68,8 @@ contract DeployPostageYieldManager is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy PostageYieldManager
-        PostageYieldManager manager = new PostageYieldManager(
-            sdaiAddress,
-            daiAddress,
-            bzzAddress,
-            postageStampAddress,
-            dexRouterAddress
-        );
+        PostageYieldManager manager =
+            new PostageYieldManager(sdaiAddress, daiAddress, bzzAddress, postageStampAddress, dexRouterAddress);
 
         console.log("\n=== Deployment Complete ===");
         console.log("PostageYieldManager:", address(manager));

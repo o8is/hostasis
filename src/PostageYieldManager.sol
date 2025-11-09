@@ -36,49 +36,20 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     event Deposited(
-        address indexed user,
-        uint256 indexed depositIndex,
-        uint256 sDAIAmount,
-        uint256 daiValue,
-        bytes32 stampId
+        address indexed user, uint256 indexed depositIndex, uint256 sDAIAmount, uint256 daiValue, bytes32 stampId
     );
 
-    event Withdrawn(
-        address indexed user,
-        uint256 indexed depositIndex,
-        uint256 sDAIAmount,
-        uint256 daiValue
-    );
+    event Withdrawn(address indexed user, uint256 indexed depositIndex, uint256 sDAIAmount, uint256 daiValue);
 
-    event YieldHarvested(
-        uint256 totalYieldDAI,
-        uint256 bzzAmount,
-        uint256 timestamp
-    );
+    event YieldHarvested(uint256 totalYieldDAI, uint256 bzzAmount, uint256 timestamp);
 
-    event StampToppedUp(
-        bytes32 indexed stampId,
-        uint256 bzzAmount,
-        address indexed owner
-    );
+    event StampToppedUp(bytes32 indexed stampId, uint256 bzzAmount, address indexed owner);
 
-    event StampIdUpdated(
-        address indexed user,
-        uint256 indexed depositIndex,
-        bytes32 oldStampId,
-        bytes32 newStampId
-    );
+    event StampIdUpdated(address indexed user, uint256 indexed depositIndex, bytes32 oldStampId, bytes32 newStampId);
 
-    event BatchProcessed(
-        address indexed keeper,
-        uint256 usersProcessed,
-        uint256 keeperReward
-    );
+    event BatchProcessed(address indexed keeper, uint256 usersProcessed, uint256 keeperReward);
 
-    event DistributionComplete(
-        uint256 totalBZZDistributed,
-        uint256 totalUsersProcessed
-    );
+    event DistributionComplete(uint256 totalBZZDistributed, uint256 totalUsersProcessed);
 
     event KeeperFeeUpdated(uint256 newFeeBps);
     event HarvesterFeePaid(address indexed harvester, uint256 amount);
@@ -111,10 +82,10 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
 
     /// @notice Struct representing a user's deposit
     struct Deposit {
-        uint256 sDAIAmount;        // Amount of sDAI shares deposited
-        uint256 principalDAI;      // DAI value at time of deposit (prevents yield theft)
-        bytes32 stampId;           // Swarm postage batch ID to fund
-        uint256 depositTime;       // Timestamp of deposit
+        uint256 sDAIAmount; // Amount of sDAI shares deposited
+        uint256 principalDAI; // DAI value at time of deposit (prevents yield theft)
+        bytes32 stampId; // Swarm postage batch ID to fund
+        uint256 depositTime; // Timestamp of deposit
     }
 
     /// @notice Maps user address to their deposits
@@ -140,10 +111,10 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
 
     /// @notice Distribution state
     struct DistributionState {
-        uint256 totalBZZ;           // Total BZZ to distribute
-        uint256 cursor;             // Current position in activeUsers array
-        uint256 snapshotTotalSDAI;  // Total sDAI at time of harvest
-        bool active;                // Is distribution ongoing
+        uint256 totalBZZ; // Total BZZ to distribute
+        uint256 cursor; // Current position in activeUsers array
+        uint256 snapshotTotalSDAI; // Total sDAI at time of harvest
+        bool active; // Is distribution ongoing
     }
     DistributionState public distributionState;
 
@@ -155,13 +126,9 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(
-        address _sdai,
-        address _dai,
-        address _bzz,
-        address _postageStamp,
-        address _dexRouter
-    ) Ownable(msg.sender) {
+    constructor(address _sdai, address _dai, address _bzz, address _postageStamp, address _dexRouter)
+        Ownable(msg.sender)
+    {
         if (_sdai == address(0)) revert ZeroAddress();
         if (_dai == address(0)) revert ZeroAddress();
         if (_bzz == address(0)) revert ZeroAddress();
@@ -189,17 +156,14 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     /// @param sDAIAmount Amount of sDAI to deposit
     /// @param stampId Swarm postage batch ID (32 bytes)
     /// @return depositIndex Index of the created deposit
-    function deposit(
-        uint256 sDAIAmount,
-        bytes32 stampId
-    ) external nonReentrant returns (uint256 depositIndex) {
+    function deposit(uint256 sDAIAmount, bytes32 stampId) external nonReentrant returns (uint256 depositIndex) {
         if (sDAIAmount == 0) revert ZeroAmount();
         if (stampId == bytes32(0)) revert InvalidStampId();
 
-        // Get current exchange rate 
+        // Get current exchange rate
         uint256 currentRate = SDAI.convertToAssets(1e18); // DAI per 1 sDAI
 
-        // Calculate DAI value at current rate 
+        // Calculate DAI value at current rate
         uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
 
         // Transfer sDAI from user
@@ -208,12 +172,7 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
         // Create deposit record
         depositIndex = userDeposits[msg.sender].length;
         userDeposits[msg.sender].push(
-            Deposit({
-                sDAIAmount: sDAIAmount,
-                principalDAI: daiValue,
-                stampId: stampId,
-                depositTime: block.timestamp
-            })
+            Deposit({sDAIAmount: sDAIAmount, principalDAI: daiValue, stampId: stampId, depositTime: block.timestamp})
         );
 
         // Update global tracking
@@ -229,10 +188,7 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     /// @notice Withdraw sDAI from a specific deposit
     /// @param depositIndex Index of the deposit to withdraw from
     /// @param sDAIAmount Amount of sDAI to withdraw
-    function withdraw(
-        uint256 depositIndex,
-        uint256 sDAIAmount
-    ) external nonReentrant {
+    function withdraw(uint256 depositIndex, uint256 sDAIAmount) external nonReentrant {
         if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
         if (sDAIAmount == 0) revert ZeroAmount();
 
@@ -264,10 +220,7 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     /// @notice Update the stamp ID for a deposit
     /// @param depositIndex Index of the deposit
     /// @param newStampId New postage batch ID
-    function updateStampId(
-        uint256 depositIndex,
-        bytes32 newStampId
-    ) external {
+    function updateStampId(uint256 depositIndex, bytes32 newStampId) external {
         if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
         if (newStampId == bytes32(0)) revert InvalidStampId();
 
@@ -303,10 +256,7 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     /// @param user User address
     /// @param depositIndex Deposit index
     /// @return yieldDAI Yield in DAI terms for this deposit
-    function previewUserYield(
-        address user,
-        uint256 depositIndex
-    ) external view returns (uint256 yieldDAI) {
+    function previewUserYield(address user, uint256 depositIndex) external view returns (uint256 yieldDAI) {
         if (depositIndex >= userDeposits[user].length) return 0;
 
         Deposit memory userDeposit = userDeposits[user][depositIndex];
@@ -454,11 +404,11 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     /// @return canProcess Whether a batch can be processed
     /// @return estimatedReward Reward for processing the specified batch size
     /// @return remainingUsers Users left to process
-    function getBatchIncentive(uint256 batchSize) external view returns (
-        bool canProcess,
-        uint256 estimatedReward,
-        uint256 remainingUsers
-    ) {
+    function getBatchIncentive(uint256 batchSize)
+        external
+        view
+        returns (bool canProcess, uint256 estimatedReward, uint256 remainingUsers)
+    {
         if (!distributionState.active) return (false, 0, 0);
         if (keeperFeePool == 0) return (false, 0, 0);
 
@@ -597,10 +547,7 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     /// @param user User address
     /// @param depositIndex Deposit index
     /// @return userDeposit Deposit struct
-    function getUserDeposit(
-        address user,
-        uint256 depositIndex
-    ) external view returns (Deposit memory userDeposit) {
+    function getUserDeposit(address user, uint256 depositIndex) external view returns (Deposit memory userDeposit) {
         if (depositIndex >= userDeposits[user].length) revert InvalidDepositIndex();
         return userDeposits[user][depositIndex];
     }
