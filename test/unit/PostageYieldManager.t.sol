@@ -37,11 +37,7 @@ contract PostageYieldManagerTest is Test {
 
         // Deploy manager
         manager = new PostageYieldManager(
-            address(sdai),
-            address(dai),
-            address(bzz),
-            address(postageStamp),
-            address(dexRouter)
+            address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter)
         );
 
         // Setup users with sDAI
@@ -170,7 +166,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Rate goes to 1.10
-        sdai.setExchangeRate(1.10e18);
+        sdai.setExchangeRate(1.1e18);
 
         // Charlie deposits 100 sDAI at rate 1.10
         vm.startPrank(charlie);
@@ -354,11 +350,7 @@ contract PostageYieldManagerTest is Test {
         assertEq(yield, 50_000e18, "Should handle large numbers correctly");
     }
 
-    function test_Fuzz_DepositAndWithdraw(
-        uint256 depositAmount,
-        uint256 withdrawAmount,
-        uint256 newRate
-    ) public {
+    function test_Fuzz_DepositAndWithdraw(uint256 depositAmount, uint256 withdrawAmount, uint256 newRate) public {
         // Bound inputs to reasonable ranges
         depositAmount = bound(depositAmount, 1e18, 1_000_000e18);
         withdrawAmount = bound(withdrawAmount, 0, depositAmount);
@@ -393,5 +385,158 @@ contract PostageYieldManagerTest is Test {
             assertGt(userDeposit.sDAIAmount, 0, "Should have remaining sDAI");
             assertGt(userDeposit.principalDAI, 0, "Should have remaining principal");
         }
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        HARVEST PRINCIPAL TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Critical test: User principals must NOT be reduced when yield is harvested
+    /// Only withdrawals should reduce user principals
+    function test_Harvest_UserPrincipalsUnchanged() public {
+        // Setup: Two users deposit at different rates
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        // Rate increases
+        sdai.setExchangeRate(1.1e18);
+
+        vm.startPrank(bob);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_BOB);
+        vm.stopPrank();
+
+        // Record user principals before harvest
+        PostageYieldManager.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
+        PostageYieldManager.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
+        uint256 alicePrincipalBefore = aliceDepositBefore.principalDAI;
+        uint256 bobPrincipalBefore = bobDepositBefore.principalDAI;
+        uint256 aliceSDaiBefore = aliceDepositBefore.sDAIAmount;
+        uint256 bobSDaiBefore = bobDepositBefore.sDAIAmount;
+
+        assertEq(alicePrincipalBefore, 100e18, "Alice principal should be 100 DAI");
+        assertEq(bobPrincipalBefore, 110e18, "Bob principal should be 110 DAI");
+
+        // Generate more yield
+        sdai.setExchangeRate(1.2e18);
+
+        // Fund DEX with BZZ for swap
+        bzz.mint(address(dexRouter), 10000e18);
+
+        // Harvest yield
+        manager.harvest();
+
+        // Verify user principals are UNCHANGED after harvest
+        PostageYieldManager.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
+        PostageYieldManager.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
+
+        assertEq(
+            aliceDepositAfter.principalDAI, alicePrincipalBefore, "Alice principal should NOT change after harvest"
+        );
+        assertEq(bobDepositAfter.principalDAI, bobPrincipalBefore, "Bob principal should NOT change after harvest");
+        assertEq(aliceDepositAfter.sDAIAmount, aliceSDaiBefore, "Alice sDAI amount should NOT change after harvest");
+        assertEq(bobDepositAfter.sDAIAmount, bobSDaiBefore, "Bob sDAI amount should NOT change after harvest");
+    }
+
+    /// @notice Test multiple harvests don't affect user principals
+    function test_Harvest_MultipleHarvests_UserPrincipalsUnchanged() public {
+        // Lower threshold for testing
+        manager.setMinYieldThreshold(1e18);
+
+        // Alice deposits
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        // Record initial principal
+        PostageYieldManager.Deposit memory aliceDepositInitial = manager.getUserDeposit(alice, 0);
+        uint256 alicePrincipalInitial = aliceDepositInitial.principalDAI;
+        uint256 aliceSDaiInitial = aliceDepositInitial.sDAIAmount;
+
+        // Fund DEX with BZZ
+        bzz.mint(address(dexRouter), 100000e18);
+
+        // First harvest
+        sdai.setExchangeRate(1.1e18);
+        manager.harvest();
+
+        PostageYieldManager.Deposit memory aliceDepositAfterHarvest1 = manager.getUserDeposit(alice, 0);
+        assertEq(aliceDepositAfterHarvest1.principalDAI, alicePrincipalInitial, "Principal unchanged after 1st harvest");
+        assertEq(aliceDepositAfterHarvest1.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after 1st harvest");
+
+        // Second harvest (before keeper processes)
+        sdai.setExchangeRate(1.2e18);
+        manager.harvest();
+
+        PostageYieldManager.Deposit memory aliceDepositAfterHarvest2 = manager.getUserDeposit(alice, 0);
+        assertEq(aliceDepositAfterHarvest2.principalDAI, alicePrincipalInitial, "Principal unchanged after 2nd harvest");
+        assertEq(aliceDepositAfterHarvest2.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after 2nd harvest");
+
+        // Third harvest
+        sdai.setExchangeRate(1.3e18);
+        manager.harvest();
+
+        PostageYieldManager.Deposit memory aliceDepositAfterHarvest3 = manager.getUserDeposit(alice, 0);
+        assertEq(aliceDepositAfterHarvest3.principalDAI, alicePrincipalInitial, "Principal unchanged after 3rd harvest");
+        assertEq(aliceDepositAfterHarvest3.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after 3rd harvest");
+
+        // Process distribution - still shouldn't affect principals
+        vm.prank(address(0x123));
+        manager.processBatch(10);
+
+        PostageYieldManager.Deposit memory aliceDepositAfterDistribution = manager.getUserDeposit(alice, 0);
+        assertEq(
+            aliceDepositAfterDistribution.principalDAI, alicePrincipalInitial, "Principal unchanged after distribution"
+        );
+        assertEq(aliceDepositAfterDistribution.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after distribution");
+    }
+
+    /// @notice Test that totalPrincipalDAI is updated correctly during harvest but user principals are not
+    function test_Harvest_TotalPrincipalUpdated_UserPrincipalsUnchanged() public {
+        // Alice and Bob deposit
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        vm.startPrank(bob);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_BOB);
+        vm.stopPrank();
+
+        uint256 totalPrincipalBefore = manager.totalPrincipalDAI();
+        assertEq(totalPrincipalBefore, 200e18, "Total principal should be 200 DAI");
+
+        PostageYieldManager.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
+        PostageYieldManager.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
+
+        // Generate yield and harvest
+        sdai.setExchangeRate(1.2e18);
+        bzz.mint(address(dexRouter), 10000e18);
+        manager.harvest();
+
+        // totalPrincipalDAI should be recalculated to match the current value of remaining sDAI
+        // After harvesting yield, remaining value should approximately equal original principal
+        uint256 totalPrincipalAfter = manager.totalPrincipalDAI();
+        assertApproxEqRel(
+            totalPrincipalAfter,
+            totalPrincipalBefore,
+            0.001e18, // 0.1% tolerance for rounding
+            "Total principal should be approximately unchanged (yield was removed)"
+        );
+
+        // But individual user principals should be UNCHANGED
+        PostageYieldManager.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
+        PostageYieldManager.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
+
+        assertEq(aliceDepositAfter.principalDAI, aliceDepositBefore.principalDAI, "Alice principal unchanged");
+        assertEq(bobDepositAfter.principalDAI, bobDepositBefore.principalDAI, "Bob principal unchanged");
+
+        // User principals sum should still be the original 200 DAI
+        uint256 userPrincipalSum = aliceDepositAfter.principalDAI + bobDepositAfter.principalDAI;
+        assertEq(userPrincipalSum, 200e18, "Sum of user principals should remain 200 DAI");
     }
 }
