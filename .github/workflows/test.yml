@@ -27,8 +27,14 @@ jobs:
       - name: Show Forge version
         run: forge --version
 
-      - name: Install dependencies
-        run: forge install
+      - name: Verify submodules
+        run: |
+          echo "Checking lib directory:"
+          ls -la lib/
+          echo "Checking forge-std:"
+          ls -la lib/forge-std/ || echo "forge-std not found"
+          echo "Checking openzeppelin-contracts:"
+          ls -la lib/openzeppelin-contracts/ || echo "openzeppelin-contracts not found"
 
       - name: Run Forge fmt
         run: forge fmt --check
