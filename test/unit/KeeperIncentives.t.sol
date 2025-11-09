@@ -145,6 +145,87 @@ contract KeeperIncentivesTest is Test {
         assertTrue(active, "Distribution should be active");
     }
 
+
+    function test_MultipleHarvests_BeforeKeeperRuns() public {
+        // Setup: Users deposit
+        vm.prank(alice);
+        sdai.approve(address(manager), 100e18);
+        vm.prank(alice);
+        manager.deposit(100e18, STAMP_ALICE);
+
+        vm.prank(bob);
+        sdai.approve(address(manager), 100e18);
+        vm.prank(bob);
+        manager.deposit(100e18, STAMP_BOB);
+
+        // Fund DEX router with BZZ
+        bzz.mint(address(dexRouter), 10000e18);
+
+        // Increase rate to generate yield
+        sdai.setExchangeRate(1.1e18); // 10% yield
+
+        // First harvest - might not have enough keeper fees
+        address harvester1 = address(0x100);
+        vm.prank(harvester1);
+        manager.harvest();
+
+        // Check distribution is active
+        (uint256 totalBZZ1, , , bool active1) = manager.distributionState();
+        assertTrue(active1, "Distribution should be active after first harvest");
+        uint256 keeperFeePool1 = manager.keeperFeePool();
+        assertGt(keeperFeePool1, 0, "Keeper fee pool should have fees from first harvest");
+        assertGt(totalBZZ1, 0, "Should have BZZ from first harvest");
+
+        // generate more yield by increasing rate further
+        sdai.setExchangeRate(1.2e18); // Additional yield: goes from 1.1 to 1.2
+
+        // Second harvest BEFORE keeper runs - should accumulate fees
+        address harvester2 = address(0x101);
+        vm.prank(harvester2);
+        manager.harvest();
+
+        // Verify distribution is still active and BZZ accumulated
+        (uint256 totalBZZ2, , , bool active2) = manager.distributionState();
+        assertTrue(active2, "Distribution should still be active after second harvest");
+        assertGt(totalBZZ2, totalBZZ1, "BZZ should accumulate from multiple harvests");
+
+        uint256 keeperFeePool2 = manager.keeperFeePool();
+        assertGt(keeperFeePool2, keeperFeePool1, "Keeper fees should accumulate");
+
+        // Generate even more yield
+        sdai.setExchangeRate(1.3e18); // More yield (continues increasing: 1.1 -> 1.2 -> 1.3)
+
+        // Third harvest - further accumulation
+        address harvester3 = address(0x102);
+        vm.prank(harvester3);
+        manager.harvest();
+
+        (uint256 totalBZZ3, , , bool active3) = manager.distributionState();
+        assertTrue(active3, "Distribution should still be active after third harvest");
+        assertGt(totalBZZ3, totalBZZ2, "BZZ should further accumulate");
+
+        uint256 keeperFeePool3 = manager.keeperFeePool();
+        assertGt(keeperFeePool3, keeperFeePool2, "Keeper fees should further accumulate");
+
+        // Now keeper runs with accumulated fees making it worthwhile
+        vm.prank(keeper1);
+        manager.processBatch(2);
+
+        // Verify distribution completed
+        (, , , bool active4) = manager.distributionState();
+        assertFalse(active4, "Distribution should be complete");
+
+        // Verify stamps received all accumulated BZZ
+        uint256 aliceStampBalance = postageStamp.remainingBalance(STAMP_ALICE);
+        uint256 bobStampBalance = postageStamp.remainingBalance(STAMP_BOB);
+
+        // Each user should get 50% of total accumulated BZZ (they have equal deposits)
+        uint256 expectedPerUser = totalBZZ3 / 2;
+        assertApproxEqRel(aliceStampBalance, expectedPerUser, 0.01e18, "Alice stamp should receive correct BZZ");
+        assertApproxEqRel(bobStampBalance, expectedPerUser, 0.01e18, "Bob stamp should receive correct BZZ");
+    }
+
+
     /*//////////////////////////////////////////////////////////////
                         BATCH PROCESSING TESTS
     //////////////////////////////////////////////////////////////*/

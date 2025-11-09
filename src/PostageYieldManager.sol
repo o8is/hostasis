@@ -25,6 +25,7 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     error InvalidDepositIndex();
     error InsufficientBalance();
     error NoYieldAvailable();
+    error NotEnoughYieldAvailable();
     error SlippageTooHigh();
     error DistributionInProgress();
     error NoDistributionActive();
@@ -322,17 +323,34 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Harvest yield and prepare for distribution
-    /// @dev Swaps (yield - harvester fee - keeper fees) to BZZ, sets up batch distribution
+    /// @dev Swaps (yield - harvester fee - keeper fees) to BZZ, sets up or adds to batch distribution
+    /// @dev Can be called multiple times to accumulate fees before keeper processes batches
     function harvest() external nonReentrant {
-        if (distributionState.active) revert DistributionInProgress();
-
         uint256 totalYield = previewYield();
         if (totalYield == 0) revert NoYieldAvailable();
-        if (totalYield < minYieldThreshold) revert NoYieldAvailable();
+        if (totalYield < minYieldThreshold) revert NotEnoughYieldAvailable();
 
         // Calculate sDAI shares representing the yield
         uint256 currentRate = SDAI.convertToAssets(1e18);
         uint256 yieldShares = (totalYield * 1e18) / currentRate;
+
+        // Take snapshot BEFORE updating totalSDAI for correct distribution calculations
+        // If distribution already active, accumulate BZZ; otherwise start new distribution
+        // We must snapshot before modifying totalSDAI so user deposits align with snapshot
+        if (!distributionState.active) {
+            // Setup new distribution state - snapshot current totalSDAI before harvest
+            distributionState = DistributionState({
+                totalBZZ: 0, // Will be set after swap
+                cursor: 0,
+                snapshotTotalSDAI: totalSDAI, // Snapshot BEFORE removing yield
+                active: true
+            });
+        }
+
+        // Update accounting (before redeeming)
+        totalSDAI -= yieldShares;
+        // Recalculate principal for remaining shares at current rate
+        totalPrincipalDAI = (totalSDAI * currentRate) / 1e18;
 
         // Redeem sDAI for DAI
         uint256 daiReceived = SDAI.redeem(yieldShares, address(this), address(this));
@@ -352,17 +370,11 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
         // Swap remaining DAI -> BZZ
         uint256 bzzReceived = _swapDAIForBZZ(daiToSwap);
 
-        // Setup distribution state
-        distributionState = DistributionState({
-            totalBZZ: bzzReceived,
-            cursor: 0,
-            snapshotTotalSDAI: totalSDAI, // Snapshot before updating
-            active: true
-        });
-
-        // Update principal to include harvested yield (prevents re-harvesting)
-        totalPrincipalDAI += totalYield;
-        totalSDAI -= yieldShares;
+        // Add BZZ to distribution (either new or accumulating)
+        if (distributionState.active) {
+            // Add to distribution pool (works for both new distributions and accumulations)
+            distributionState.totalBZZ += bzzReceived;
+        }
 
         lastHarvestTime = block.timestamp;
 
