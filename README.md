@@ -453,31 +453,6 @@ Add DAO for parameter management:
 
 ---
 
-## FAQ
-
-**Q: Why not use sUSDS instead of sDAI?**
-A: sUSDS on Gnosis doesn't have ERC4626 functionality (no `convertToAssets`). sDAI is mature, has full ERC4626, and earns the same DSR/SSR yield.
-
-**Q: How often is the exchange rate updated?**
-A: Spark's oracle updates the sDAI rate every 1-2 days. This is frequent enough for accurate yield tracking.
-
-**Q: What if I deposit when the rate is stale?**
-A: You track your principal at the current rate (even if slightly stale). Max 1-2 days drift = ~0.01-0.02% error, which is negligible.
-
-**Q: Can I change which stamp gets the yield?**
-A: Yes! Call `updateStampId()` anytime. Next harvest will use the new stamp.
-
-**Q: What if my stamp expires?**
-A: Update to a new stamp ID before harvest. The contract will revert if topping up an invalid stamp.
-
-**Q: Is there a minimum deposit?**
-A: No minimum enforced, but recommend at least 10 sDAI to make gas costs worthwhile.
-
-**Q: How often is yield harvested?**
-A: Default is monthly. Can be adjusted based on gas costs vs yield accumulated.
-
----
-
 ## Resources
 
 - [Spark Protocol (sDAI)](https://spark.fi/)
@@ -498,8 +473,3 @@ MIT
 
 ⚠️ **Not yet audited.** Use at your own risk. Professional security audit recommended before significant TVL.
 
----
-
-## Contact
-
-For questions or contributions, please open an issue on GitHub.
