@@ -29,12 +29,7 @@ contract UpgradeContract is Script {
         opts.unsafeSkipStorageCheck = true;
 
         // Perform the upgrade
-        Upgrades.upgradeProxy(
-            proxy,
-            "PostageYieldManagerUpgradeable.sol:PostageYieldManagerUpgradeable",
-            "",
-            opts
-        );
+        Upgrades.upgradeProxy(proxy, "PostageYieldManagerUpgradeable.sol:PostageYieldManagerUpgradeable", "", opts);
 
         vm.stopBroadcast();
 
