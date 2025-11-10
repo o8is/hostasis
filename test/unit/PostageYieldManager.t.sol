@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
-import {PostageYieldManager} from "../../src/PostageYieldManager.sol";
+import {PostageYieldManagerUpgradeable} from "../../src/PostageYieldManagerUpgradeable.sol";
 import {MockSavingsDai} from "../mocks/MockSavingsDai.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockPostageStamp} from "../mocks/MockPostageStamp.sol";
 import {MockDexRouter} from "../mocks/MockDexRouter.sol";
+import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract PostageYieldManagerTest is Test {
-    PostageYieldManager public manager;
+    PostageYieldManagerUpgradeable public manager;
     MockSavingsDai public sdai;
     MockERC20 public dai;
     MockERC20 public bzz;
@@ -19,6 +20,7 @@ contract PostageYieldManagerTest is Test {
     address public alice = address(0x1);
     address public bob = address(0x2);
     address public charlie = address(0x3);
+    address public admin = address(0x999); // Separate admin for proxy
 
     bytes32 public constant STAMP_ALICE = bytes32(uint256(1));
     bytes32 public constant STAMP_BOB = bytes32(uint256(2));
@@ -35,10 +37,19 @@ contract PostageYieldManagerTest is Test {
         postageStamp = new MockPostageStamp();
         dexRouter = new MockDexRouter(address(dai), address(bzz));
 
-        // Deploy manager
-        manager = new PostageYieldManager(
-            address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter)
+        // Deploy implementation
+        address implementation = address(new PostageYieldManagerUpgradeable());
+
+        // Deploy upgradeable manager with proxy
+        address proxy = UnsafeUpgrades.deployTransparentProxy(
+            implementation,
+            admin,
+            abi.encodeCall(
+                PostageYieldManagerUpgradeable.initialize,
+                (address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter))
+            )
         );
+        manager = PostageYieldManagerUpgradeable(proxy);
 
         // Setup users with sDAI
         _mintSDAIToUser(alice, INITIAL_BALANCE);
@@ -78,7 +89,7 @@ contract PostageYieldManagerTest is Test {
         assertEq(manager.totalSDAI(), depositAmount, "Total sDAI should match deposit");
         assertEq(manager.totalPrincipalDAI(), depositAmount, "Total principal should match deposit value");
 
-        PostageYieldManager.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
 
         assertEq(userDeposit.sDAIAmount, depositAmount, "Deposit sDAI amount mismatch");
         assertEq(userDeposit.principalDAI, depositAmount, "Principal DAI should equal deposit at 1:1 rate");
@@ -89,7 +100,7 @@ contract PostageYieldManagerTest is Test {
     function test_Deposit_RevertZeroAmount() public {
         vm.startPrank(alice);
         sdai.approve(address(manager), 100e18);
-        vm.expectRevert(PostageYieldManager.ZeroAmount.selector);
+        vm.expectRevert(PostageYieldManagerUpgradeable.ZeroAmount.selector);
         manager.deposit(0, STAMP_ALICE);
         vm.stopPrank();
     }
@@ -97,7 +108,7 @@ contract PostageYieldManagerTest is Test {
     function test_Deposit_RevertZeroStampId() public {
         vm.startPrank(alice);
         sdai.approve(address(manager), 100e18);
-        vm.expectRevert(PostageYieldManager.InvalidStampId.selector);
+        vm.expectRevert(PostageYieldManagerUpgradeable.InvalidStampId.selector);
         manager.deposit(100e18, bytes32(0));
         vm.stopPrank();
     }
@@ -118,7 +129,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Verify Alice's principal is 100 DAI
-        PostageYieldManager.Deposit memory aliceDepositData = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositData = manager.getUserDeposit(alice, 0);
         assertEq(aliceDepositData.principalDAI, 100e18, "Alice principal should be 100 DAI");
         assertEq(manager.totalPrincipalDAI(), 100e18, "Total principal should be 100 DAI");
 
@@ -133,7 +144,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Verify Bob's principal is 110 DAI (100 sDAI * 1.1 rate)
-        PostageYieldManager.Deposit memory bobDepositData = manager.getUserDeposit(bob, 0);
+        PostageYieldManagerUpgradeable.Deposit memory bobDepositData = manager.getUserDeposit(bob, 0);
         assertEq(bobDepositData.principalDAI, 110e18, "Bob principal should be 110 DAI");
 
         // Step 4: Total principal = 210 DAI (Alice: 100, Bob: 110)
@@ -220,7 +231,7 @@ contract PostageYieldManagerTest is Test {
 
         assertEq(balanceAfter - balanceBefore, withdrawAmount, "Should receive withdrawn sDAI");
 
-        PostageYieldManager.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
         assertEq(userDeposit.sDAIAmount, 50e18, "Deposit should have 50 sDAI remaining");
         assertEq(userDeposit.principalDAI, 50e18, "Principal should be reduced proportionally");
         assertEq(manager.totalSDAI(), 50e18, "Total sDAI should be reduced");
@@ -245,7 +256,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Principal should also reduce by 25% (from 100 to 75)
-        PostageYieldManager.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
         assertEq(userDeposit.principalDAI, 75e18, "Principal should reduce proportionally");
     }
 
@@ -254,7 +265,7 @@ contract PostageYieldManagerTest is Test {
         sdai.approve(address(manager), 100e18);
         manager.deposit(100e18, STAMP_ALICE);
 
-        vm.expectRevert(PostageYieldManager.InsufficientBalance.selector);
+        vm.expectRevert(PostageYieldManagerUpgradeable.InsufficientBalance.selector);
         manager.withdraw(0, 101e18);
         vm.stopPrank();
     }
@@ -273,8 +284,177 @@ contract PostageYieldManagerTest is Test {
         manager.updateStampId(0, newStampId);
         vm.stopPrank();
 
-        PostageYieldManager.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
         assertEq(userDeposit.stampId, newStampId, "Stamp ID should be updated");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        TOP UP TESTS
+    //////////////////////////////////////////////////////////////*/
+
+    function test_TopUp_Success() public {
+        uint256 initialDeposit = 100e18;
+        uint256 topUpAmount = 50e18;
+
+        vm.startPrank(alice);
+        sdai.approve(address(manager), initialDeposit + topUpAmount);
+
+        // Initial deposit
+        manager.deposit(initialDeposit, STAMP_ALICE);
+
+        // Top up
+        manager.topUp(0, topUpAmount);
+        vm.stopPrank();
+
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+
+        assertEq(userDeposit.sDAIAmount, initialDeposit + topUpAmount, "sDAI amount should increase");
+        assertEq(userDeposit.principalDAI, initialDeposit + topUpAmount, "Principal should increase at 1:1 rate");
+        assertEq(userDeposit.stampId, STAMP_ALICE, "Stamp ID should remain unchanged");
+        assertEq(manager.totalSDAI(), initialDeposit + topUpAmount, "Total sDAI should be updated");
+        assertEq(manager.totalPrincipalDAI(), initialDeposit + topUpAmount, "Total principal should be updated");
+    }
+
+    function test_TopUp_AtDifferentRate() public {
+        uint256 initialDeposit = 100e18;
+        uint256 topUpAmount = 50e18;
+        uint256 newRate = 1.2e18; // 1 sDAI = 1.2 DAI
+
+        vm.startPrank(alice);
+        sdai.approve(address(manager), initialDeposit + topUpAmount);
+
+        // Initial deposit at rate 1.0
+        manager.deposit(initialDeposit, STAMP_ALICE);
+        vm.stopPrank();
+
+        // Change exchange rate
+        sdai.setExchangeRate(newRate);
+
+        // Top up at rate 1.2
+        vm.startPrank(alice);
+        manager.topUp(0, topUpAmount);
+        vm.stopPrank();
+
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+
+        // Initial: 100 sDAI @ 1.0 = 100 DAI principal
+        // Top up: 50 sDAI @ 1.2 = 60 DAI principal
+        // Total: 150 sDAI, 160 DAI principal
+        assertEq(userDeposit.sDAIAmount, initialDeposit + topUpAmount, "sDAI amount should be 150");
+        assertEq(userDeposit.principalDAI, 100e18 + 60e18, "Principal should be 160 (100 + 50*1.2)");
+        assertEq(manager.totalSDAI(), 150e18, "Total sDAI should be 150");
+        assertEq(manager.totalPrincipalDAI(), 160e18, "Total principal should be 160");
+    }
+
+    function test_TopUp_MultipleTopUps() public {
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 1000e18);
+
+        // Initial deposit
+        manager.deposit(100e18, STAMP_ALICE);
+
+        // First top up
+        manager.topUp(0, 50e18);
+
+        // Second top up
+        manager.topUp(0, 30e18);
+
+        // Third top up
+        manager.topUp(0, 20e18);
+        vm.stopPrank();
+
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+
+        assertEq(userDeposit.sDAIAmount, 200e18, "Total sDAI should be 200");
+        assertEq(userDeposit.principalDAI, 200e18, "Total principal should be 200");
+    }
+
+    function test_TopUp_RevertZeroAmount() public {
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_ALICE);
+
+        vm.expectRevert(PostageYieldManagerUpgradeable.ZeroAmount.selector);
+        manager.topUp(0, 0);
+        vm.stopPrank();
+    }
+
+    function test_TopUp_RevertInvalidDepositIndex() public {
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+
+        vm.expectRevert(PostageYieldManagerUpgradeable.InvalidDepositIndex.selector);
+        manager.topUp(0, 50e18); // No deposit exists yet
+        vm.stopPrank();
+    }
+
+    function test_TopUp_PreservesYieldCalculation() public {
+        uint256 initialDeposit = 100e18;
+        uint256 topUpAmount = 50e18;
+        uint256 yieldRate = 1.5e18; // 1 sDAI = 1.5 DAI (50% yield)
+
+        vm.startPrank(alice);
+        sdai.approve(address(manager), initialDeposit + topUpAmount);
+
+        // Initial deposit at rate 1.0
+        manager.deposit(initialDeposit, STAMP_ALICE);
+        vm.stopPrank();
+
+        // Increase rate to simulate yield
+        sdai.setExchangeRate(yieldRate);
+
+        // Calculate yield before top-up
+        uint256 yieldBeforeTopUp = manager.previewUserYield(alice, 0);
+
+        // Top up at new rate
+        vm.startPrank(alice);
+        manager.topUp(0, topUpAmount);
+        vm.stopPrank();
+
+        // Yield should only come from the original deposit, not the top-up
+        uint256 yieldAfterTopUp = manager.previewUserYield(alice, 0);
+
+        // Original deposit: 100 sDAI with principal 100 DAI
+        // At rate 1.5: worth 150 DAI, so 50 DAI yield
+        // Top up: 50 sDAI with principal 75 DAI (50 * 1.5)
+        // At rate 1.5: worth 75 DAI, so 0 DAI yield from top-up
+        assertEq(yieldBeforeTopUp, 50e18, "Yield before top-up should be 50 DAI");
+        assertEq(yieldAfterTopUp, 50e18, "Yield after top-up should still be 50 DAI (only from original)");
+    }
+
+    function test_TopUp_DifferentUserDeposits() public {
+        // Alice creates two deposits
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 300e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        manager.deposit(100e18, STAMP_BOB);
+        vm.stopPrank();
+
+        // Bob creates one deposit
+        vm.startPrank(bob);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_BOB);
+        vm.stopPrank();
+
+        // Alice tops up her first deposit
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 50e18);
+        manager.topUp(0, 50e18);
+        vm.stopPrank();
+
+        // Check Alice's deposits
+        PostageYieldManagerUpgradeable.Deposit memory aliceDeposit0 = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDeposit1 = manager.getUserDeposit(alice, 1);
+
+        assertEq(aliceDeposit0.sDAIAmount, 150e18, "Alice's first deposit should be topped up");
+        assertEq(aliceDeposit1.sDAIAmount, 100e18, "Alice's second deposit unchanged");
+
+        // Check Bob's deposit is unaffected
+        PostageYieldManagerUpgradeable.Deposit memory bobDeposit = manager.getUserDeposit(bob, 0);
+        assertEq(bobDeposit.sDAIAmount, 100e18, "Bob's deposit should be unchanged");
+
+        // Check totals
+        assertEq(manager.totalSDAI(), 350e18, "Total sDAI should be 350");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -376,7 +556,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Invariants
-        PostageYieldManager.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory userDeposit = manager.getUserDeposit(alice, 0);
 
         if (withdrawAmount == depositAmount) {
             assertEq(userDeposit.sDAIAmount, 0, "Should have zero sDAI after full withdrawal");
@@ -409,8 +589,8 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Record user principals before harvest
-        PostageYieldManager.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
-        PostageYieldManager.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
         uint256 alicePrincipalBefore = aliceDepositBefore.principalDAI;
         uint256 bobPrincipalBefore = bobDepositBefore.principalDAI;
         uint256 aliceSDaiBefore = aliceDepositBefore.sDAIAmount;
@@ -429,8 +609,8 @@ contract PostageYieldManagerTest is Test {
         manager.harvest();
 
         // Verify user principals are UNCHANGED after harvest
-        PostageYieldManager.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
-        PostageYieldManager.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
 
         assertEq(
             aliceDepositAfter.principalDAI, alicePrincipalBefore, "Alice principal should NOT change after harvest"
@@ -452,7 +632,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Record initial principal
-        PostageYieldManager.Deposit memory aliceDepositInitial = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositInitial = manager.getUserDeposit(alice, 0);
         uint256 alicePrincipalInitial = aliceDepositInitial.principalDAI;
         uint256 aliceSDaiInitial = aliceDepositInitial.sDAIAmount;
 
@@ -463,7 +643,7 @@ contract PostageYieldManagerTest is Test {
         sdai.setExchangeRate(1.1e18);
         manager.harvest();
 
-        PostageYieldManager.Deposit memory aliceDepositAfterHarvest1 = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest1 = manager.getUserDeposit(alice, 0);
         assertEq(aliceDepositAfterHarvest1.principalDAI, alicePrincipalInitial, "Principal unchanged after 1st harvest");
         assertEq(aliceDepositAfterHarvest1.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after 1st harvest");
 
@@ -471,7 +651,7 @@ contract PostageYieldManagerTest is Test {
         sdai.setExchangeRate(1.2e18);
         manager.harvest();
 
-        PostageYieldManager.Deposit memory aliceDepositAfterHarvest2 = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest2 = manager.getUserDeposit(alice, 0);
         assertEq(aliceDepositAfterHarvest2.principalDAI, alicePrincipalInitial, "Principal unchanged after 2nd harvest");
         assertEq(aliceDepositAfterHarvest2.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after 2nd harvest");
 
@@ -479,7 +659,7 @@ contract PostageYieldManagerTest is Test {
         sdai.setExchangeRate(1.3e18);
         manager.harvest();
 
-        PostageYieldManager.Deposit memory aliceDepositAfterHarvest3 = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest3 = manager.getUserDeposit(alice, 0);
         assertEq(aliceDepositAfterHarvest3.principalDAI, alicePrincipalInitial, "Principal unchanged after 3rd harvest");
         assertEq(aliceDepositAfterHarvest3.sDAIAmount, aliceSDaiInitial, "sDAI amount unchanged after 3rd harvest");
 
@@ -487,7 +667,7 @@ contract PostageYieldManagerTest is Test {
         vm.prank(address(0x123));
         manager.processBatch(10);
 
-        PostageYieldManager.Deposit memory aliceDepositAfterDistribution = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterDistribution = manager.getUserDeposit(alice, 0);
         assertEq(
             aliceDepositAfterDistribution.principalDAI, alicePrincipalInitial, "Principal unchanged after distribution"
         );
@@ -510,8 +690,8 @@ contract PostageYieldManagerTest is Test {
         uint256 totalPrincipalBefore = manager.totalPrincipalDAI();
         assertEq(totalPrincipalBefore, 200e18, "Total principal should be 200 DAI");
 
-        PostageYieldManager.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
-        PostageYieldManager.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
 
         // Generate yield and harvest
         sdai.setExchangeRate(1.2e18);
@@ -529,8 +709,8 @@ contract PostageYieldManagerTest is Test {
         );
 
         // But individual user principals should be UNCHANGED
-        PostageYieldManager.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
-        PostageYieldManager.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
 
         assertEq(aliceDepositAfter.principalDAI, aliceDepositBefore.principalDAI, "Alice principal unchanged");
         assertEq(bobDepositAfter.principalDAI, bobDepositBefore.principalDAI, "Bob principal unchanged");

@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
-import {PostageYieldManager} from "../../src/PostageYieldManager.sol";
+import {PostageYieldManagerUpgradeable} from "../../src/PostageYieldManagerUpgradeable.sol";
 import {MockSavingsDai} from "../mocks/MockSavingsDai.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockPostageStamp} from "../mocks/MockPostageStamp.sol";
 import {MockDexRouter} from "../mocks/MockDexRouter.sol";
+import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract KeeperIncentivesTest is Test {
-    PostageYieldManager public manager;
+    PostageYieldManagerUpgradeable public manager;
     MockSavingsDai public sdai;
     MockERC20 public dai;
     MockERC20 public bzz;
@@ -22,6 +23,7 @@ contract KeeperIncentivesTest is Test {
     address public charlie = address(0x3);
     address public keeper1 = address(0x10);
     address public keeper2 = address(0x11);
+    address public admin = address(0x999); // Separate admin for proxy
     address public owner = address(this);
 
     bytes32 public constant STAMP_ALICE = bytes32(uint256(1));
@@ -44,10 +46,19 @@ contract KeeperIncentivesTest is Test {
         postageStamp = new MockPostageStamp();
         dexRouter = new MockDexRouter(address(dai), address(bzz));
 
-        // Deploy manager
-        manager = new PostageYieldManager(
-            address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter)
+        // Deploy implementation
+        address implementation = address(new PostageYieldManagerUpgradeable());
+
+        // Deploy upgradeable manager with proxy
+        address proxy = UnsafeUpgrades.deployTransparentProxy(
+            implementation,
+            admin,
+            abi.encodeCall(
+                PostageYieldManagerUpgradeable.initialize,
+                (address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter))
+            )
         );
+        manager = PostageYieldManagerUpgradeable(proxy);
 
         // Setup users with sDAI
         _mintSDAIToUser(alice, INITIAL_BALANCE);
@@ -251,7 +262,7 @@ contract KeeperIncentivesTest is Test {
     }
 
     function test_ProcessBatch_RevertNoDistributionActive() public {
-        vm.expectRevert(PostageYieldManager.NoDistributionActive.selector);
+        vm.expectRevert(PostageYieldManagerUpgradeable.NoDistributionActive.selector);
         vm.prank(keeper1);
         manager.processBatch(10);
     }
@@ -271,7 +282,7 @@ contract KeeperIncentivesTest is Test {
         // Keeper fee pool should be 0 because we set fee to 0%
         assertEq(manager.keeperFeePool(), 0, "Keeper pool should be empty");
 
-        vm.expectRevert(PostageYieldManager.InsufficientKeeperFees.selector);
+        vm.expectRevert(PostageYieldManagerUpgradeable.InsufficientKeeperFees.selector);
         vm.prank(keeper1);
         manager.processBatch(10);
     }

@@ -2,13 +2,20 @@
 pragma solidity ^0.8.20;
 
 /// @title IPostageStamp
-/// @notice Interface for Swarm's Postage Stamp contract
+/// @notice Interface for Swarm's Postage Stamp contract on Gnosis Chain
 /// @dev Used to top up postage batches with BZZ tokens for decentralized storage
+/// @dev Contract address: 0x45a1502382541Cd610CC9068e88727426b696293
 interface IPostageStamp {
     /// @notice Top up a postage batch with BZZ tokens
     /// @param batchId The ID of the batch to top up
-    /// @param amount Amount of BZZ tokens to add to the batch
-    function topUp(bytes32 batchId, uint256 amount) external;
+    /// @param topupAmountPerChunk Amount of BZZ tokens to add per chunk (total = topupAmountPerChunk * 2^depth)
+    /// @dev At least `topupAmountPerChunk * 2^depth` tokens must be approved before calling
+    function topUp(bytes32 batchId, uint256 topupAmountPerChunk) external;
+
+    /// @notice Get the depth of a postage batch
+    /// @param batchId The ID of the batch to query
+    /// @return depth The depth of the batch (determines number of chunks = 2^depth)
+    function batchDepth(bytes32 batchId) external view returns (uint8 depth);
 
     /// @notice Get the remaining balance of a postage batch
     /// @param batchId The ID of the batch to query

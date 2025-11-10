@@ -1,18 +1,25 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {ISavingsDai} from "./interfaces/ISavingsDai.sol";
 import {IPostageStamp} from "./interfaces/IPostageStamp.sol";
 import {IDexRouter} from "./interfaces/IDexRouter.sol";
 
-/// @title PostageYieldManager
-/// @notice Manages sDAI deposits and redirects yield to Swarm postage stamps
+/// @title PostageYieldManagerUpgradeable
+/// @notice Manages sDAI deposits and redirects yield to Swarm postage stamps (Upgradeable)
 /// @dev Correctly tracks principal in DAI terms to prevent yield theft between depositors
-contract PostageYieldManager is Ownable, ReentrancyGuard {
+contract PostageYieldManagerUpgradeable is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    ReentrancyGuardTransient
+{
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -60,16 +67,21 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice sDAI token on Gnosis Chain
-    ISavingsDai public immutable SDAI;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    ISavingsDai public SDAI;
 
-    /// @notice DAI token on Gnosis Chain (xDAI)
-    IERC20 public immutable DAI;
+    /// @notice wxDAI token on Gnosis Chain (ERC-20 wrapped xDAI)
+    /// @dev This is NOT native xDAI - it's the wrapped ERC-20 version at 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public DAI;
 
     /// @notice BZZ token on Gnosis Chain
-    IERC20 public immutable BZZ;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IERC20 public BZZ;
 
     /// @notice Swarm Postage Stamp contract
-    IPostageStamp public immutable POSTAGE_STAMP;
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    IPostageStamp public POSTAGE_STAMP;
 
     /// @notice DEX router for swapping DAI -> BZZ
     IDexRouter public dexRouter;
@@ -126,8 +138,18 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
                             CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
 
-    constructor(address _sdai, address _dai, address _bzz, address _postageStamp, address _dexRouter)
-        Ownable(msg.sender)
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            INITIALIZER
+    //////////////////////////////////////////////////////////////*/
+
+    function initialize(address _sdai, address _dai, address _bzz, address _postageStamp, address _dexRouter)
+        public
+        initializer
     {
         if (_sdai == address(0)) revert ZeroAddress();
         if (_dai == address(0)) revert ZeroAddress();
@@ -135,18 +157,28 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
         if (_postageStamp == address(0)) revert ZeroAddress();
         if (_dexRouter == address(0)) revert ZeroAddress();
 
+        __Ownable_init(msg.sender);
+        // Note: ReentrancyGuardTransient and UUPSUpgradeable don't need initialization
+
         SDAI = ISavingsDai(_sdai);
         DAI = IERC20(_dai);
         BZZ = IERC20(_bzz);
         POSTAGE_STAMP = IPostageStamp(_postageStamp);
         dexRouter = IDexRouter(_dexRouter);
 
-        minYieldThreshold = 10e18; // 10 DAI minimum
+        minYieldThreshold = 0.25e18; // 0.25 DAI minimum
         maxSlippageBps = 200; // 2% max slippage
         harvesterFeeBps = 50; // 0.5% harvester fee
         keeperFeeBps = 100; // 1% keeper fee
         lastHarvestTime = block.timestamp;
     }
+
+    /*//////////////////////////////////////////////////////////////
+                        UPGRADE AUTHORIZATION
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Authorize upgrade (only owner can upgrade)
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT & WITHDRAWAL
@@ -229,6 +261,38 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
         userDeposit.stampId = newStampId;
 
         emit StampIdUpdated(msg.sender, depositIndex, oldStampId, newStampId);
+    }
+
+    /// @notice Top up an existing deposit with additional sDAI
+    /// @param depositIndex Index of the deposit to top up
+    /// @param sDAIAmount Amount of sDAI to add
+    function topUp(uint256 depositIndex, uint256 sDAIAmount) external nonReentrant {
+        if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
+        if (sDAIAmount == 0) revert ZeroAmount();
+
+        Deposit storage userDeposit = userDeposits[msg.sender][depositIndex];
+
+        // Get current exchange rate
+        uint256 currentRate = SDAI.convertToAssets(1e18); // DAI per 1 sDAI
+
+        // Calculate DAI value at current rate
+        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+
+        // Transfer sDAI from user
+        IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
+
+        // Update deposit
+        userDeposit.sDAIAmount += sDAIAmount;
+        userDeposit.principalDAI += daiValue;
+
+        // Update global tracking
+        totalSDAI += sDAIAmount;
+        totalPrincipalDAI += daiValue;
+
+        // Ensure user is tracked as active
+        _addActiveUser(msg.sender);
+
+        emit Deposited(msg.sender, depositIndex, sDAIAmount, daiValue, userDeposit.stampId);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -366,11 +430,26 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
                 uint256 bzzShare = (state.totalBZZ * dep.sDAIAmount) / state.snapshotTotalSDAI;
 
                 if (bzzShare > 0) {
-                    // Approve and top up the postage stamp
-                    BZZ.safeIncreaseAllowance(address(POSTAGE_STAMP), bzzShare);
-                    POSTAGE_STAMP.topUp(dep.stampId, bzzShare);
+                    // Get batch depth to calculate per-chunk amount
+                    // Note: Swarm's topUp() expects amount per chunk, not total amount
+                    // Total BZZ transferred = perChunkAmount * 2^depth
+                    uint8 depth = POSTAGE_STAMP.batchDepth(dep.stampId);
+                    uint256 stampBatchSize = 1 << depth; // 2^depth
+                    uint256 perChunkAmount = bzzShare / stampBatchSize;
 
-                    emit StampToppedUp(dep.stampId, bzzShare, user);
+                    // Only top up if we have at least 1 token per chunk
+                    // Note: With BZZ's 16 decimals, rounding loss is negligible (< 0.000001 BZZ per user)
+                    // Example: 10 BZZ @ depth 20 → loss of ~0.0000001 BZZ
+                    if (perChunkAmount > 0) {
+                        // Calculate actual total that will be spent
+                        uint256 actualTotal = perChunkAmount * stampBatchSize;
+
+                        // Approve and top up the postage stamp
+                        BZZ.safeIncreaseAllowance(address(POSTAGE_STAMP), actualTotal);
+                        POSTAGE_STAMP.topUp(dep.stampId, perChunkAmount);
+
+                        emit StampToppedUp(dep.stampId, actualTotal, user);
+                    }
                 }
             }
 
@@ -551,4 +630,11 @@ contract PostageYieldManager is Ownable, ReentrancyGuard {
         if (depositIndex >= userDeposits[user].length) revert InvalidDepositIndex();
         return userDeposits[user][depositIndex];
     }
+
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
+     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
+     */
+    uint256[50] private __gap;
 }
