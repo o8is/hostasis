@@ -1,6 +1,6 @@
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { parseEther, type Address } from 'viem';
-import { SDAI_ADDRESS, POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useSignTypedData, useAccount } from 'wagmi';
+import { parseEther, type Address, type Hex } from 'viem';
+import { SDAI_ADDRESS, POSTAGE_MANAGER_ADDRESS, GNOSIS_CHAIN_ID } from '../contracts/addresses';
 import sDAI_ABI from '../contracts/abis/ISavingsDai.json';
 
 export function useSDAIBalance(address?: Address) {
@@ -56,5 +56,25 @@ export function useSDAIExchangeRate() {
     abi: sDAI_ABI,
     functionName: 'convertToAssets',
     args: [parseEther('1')],
+  });
+}
+
+export function useSDAINonce(owner?: Address) {
+  return useReadContract({
+    address: SDAI_ADDRESS,
+    abi: sDAI_ABI,
+    functionName: 'nonces',
+    args: owner ? [owner] : undefined,
+    query: {
+      enabled: !!owner,
+    },
+  });
+}
+
+export function useSDAIDomainSeparator() {
+  return useReadContract({
+    address: SDAI_ADDRESS,
+    abi: sDAI_ABI,
+    functionName: 'DOMAIN_SEPARATOR',
   });
 }

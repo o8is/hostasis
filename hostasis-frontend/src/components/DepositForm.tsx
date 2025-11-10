@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { parseEther, formatEther, type Hex } from 'viem';
 import { useSDAIBalance, useSDAIAllowance, useApproveSDAI } from '../hooks/useSDAI';
-import { useDeposit } from '../hooks/usePostageManager';
+import { useDeposit, useDepositWithPermit } from '../hooks/usePostageManager';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 
 export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: () => void }) {
@@ -18,6 +18,10 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
   // Hooks for approval and deposit
   const { approve, isPending: isApproving, isConfirming: isApprovingConfirming, isSuccess: isApproved } = useApproveSDAI();
   const { deposit, isPending: isDepositing, isConfirming: isDepositingConfirming, isSuccess: isDeposited } = useDeposit();
+  const { depositWithPermit, isPending: isPermitDepositing, isSigning, isConfirming: isPermitDepositingConfirming, isSuccess: isPermitDeposited } = useDepositWithPermit();
+
+  // Prefer permit-based deposit (single transaction)
+  const [usePermit, setUsePermit] = useState(true);
 
   const handleApprove = async () => {
     try {
@@ -41,7 +45,14 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       }
 
       const amountBigInt = parseEther(amount);
-      deposit(amountBigInt, normalizedId as Hex);
+
+      if (usePermit) {
+        // Use permit-based deposit (single transaction!)
+        await depositWithPermit(amountBigInt, normalizedId as Hex);
+      } else {
+        // Use traditional deposit (requires prior approval)
+        deposit(amountBigInt, normalizedId as Hex);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to deposit');
     }
@@ -67,7 +78,7 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
 
   // Refetch data and notify parent after successful deposit
   useEffect(() => {
-    if (isDeposited) {
+    if (isDeposited || isPermitDeposited) {
       refetchBalance();
       refetchAllowance();
       if (onDepositSuccess) {
@@ -77,7 +88,7 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       setAmount('');
       setStampId('');
     }
-  }, [isDeposited, refetchBalance, refetchAllowance, onDepositSuccess]);
+  }, [isDeposited, isPermitDeposited, refetchBalance, refetchAllowance, onDepositSuccess]);
 
   const hasBalance = balance && (balance as bigint) > BigInt(0);
   const isValidAmount = amount && parseFloat(amount) > 0;
@@ -122,12 +133,20 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
         <p className="error-message">{error}</p>
       )}
 
-      {isDeposited && (
+      {(isDeposited || isPermitDeposited) && (
         <p className="success-message">Deposit successful!</p>
       )}
 
       <div className="button-group">
-        {needsApproval() ? (
+        {usePermit ? (
+          <button
+            className="view-button"
+            onClick={handleDeposit}
+            disabled={!isValidAmount || !isValidStampId || isSigning || isPermitDepositing || isPermitDepositingConfirming}
+          >
+            {isSigning ? 'Sign message...' : isPermitDepositingConfirming ? 'Confirming...' : isPermitDepositing ? 'Depositing...' : 'Deposit'}
+          </button>
+        ) : needsApproval() ? (
           <button
             className="view-button"
             onClick={handleApprove}
@@ -144,6 +163,21 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
             {isDepositingConfirming ? 'Confirming...' : isDepositing ? 'Depositing...' : 'Deposit'}
           </button>
         )}
+      </div>
+
+      <div className="checkbox-container" onClick={() => setUsePermit(!usePermit)}>
+        <div className="checkbox-wrapper">
+          <input
+            type="checkbox"
+            checked={usePermit}
+            onChange={(e) => setUsePermit(e.target.checked)}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+        <div className="checkbox-label">
+          <span className="checkbox-label-main">Use gasless approval</span>
+          <span className="checkbox-label-description">Sign once instead of 2 transactions (recommended)</span>
+        </div>
       </div>
 
       {!hasBalance && (

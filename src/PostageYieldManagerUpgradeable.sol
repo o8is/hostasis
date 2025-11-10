@@ -217,6 +217,50 @@ contract PostageYieldManagerUpgradeable is
         emit Deposited(msg.sender, depositIndex, sDAIAmount, daiValue, stampId);
     }
 
+    /// @notice Deposit sDAI using EIP-2612 permit for gasless approval
+    /// @param sDAIAmount Amount of sDAI to deposit
+    /// @param stampId Swarm postage batch ID (32 bytes)
+    /// @param deadline Permit signature deadline
+    /// @param v Permit signature v component
+    /// @param r Permit signature r component
+    /// @param s Permit signature s component
+    /// @return depositIndex Index of the created deposit
+    function depositWithPermit(uint256 sDAIAmount, bytes32 stampId, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        nonReentrant
+        returns (uint256 depositIndex)
+    {
+        if (sDAIAmount == 0) revert ZeroAmount();
+        if (stampId == bytes32(0)) revert InvalidStampId();
+
+        // Execute permit to approve this contract
+        SDAI.permit(msg.sender, address(this), sDAIAmount, deadline, v, r, s);
+
+        // Get current exchange rate
+        uint256 currentRate = SDAI.convertToAssets(1e18); // DAI per 1 sDAI
+
+        // Calculate DAI value at current rate
+        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+
+        // Transfer sDAI from user
+        IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
+
+        // Create deposit record
+        depositIndex = userDeposits[msg.sender].length;
+        userDeposits[msg.sender].push(
+            Deposit({sDAIAmount: sDAIAmount, principalDAI: daiValue, stampId: stampId, depositTime: block.timestamp})
+        );
+
+        // Update global tracking
+        totalSDAI += sDAIAmount;
+        totalPrincipalDAI += daiValue;
+
+        // Track active user
+        _addActiveUser(msg.sender);
+
+        emit Deposited(msg.sender, depositIndex, sDAIAmount, daiValue, stampId);
+    }
+
     /// @notice Withdraw sDAI from a specific deposit
     /// @param depositIndex Index of the deposit to withdraw from
     /// @param sDAIAmount Amount of sDAI to withdraw
@@ -282,6 +326,51 @@ contract PostageYieldManagerUpgradeable is
         IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
 
         // Update deposit
+        userDeposit.sDAIAmount += sDAIAmount;
+        userDeposit.principalDAI += daiValue;
+
+        // Update global tracking
+        totalSDAI += sDAIAmount;
+        totalPrincipalDAI += daiValue;
+
+        // Ensure user is tracked as active
+        _addActiveUser(msg.sender);
+
+        emit Deposited(msg.sender, depositIndex, sDAIAmount, daiValue, userDeposit.stampId);
+    }
+
+    /// @notice Top up an existing deposit using EIP-2612 permit for gasless approval
+    /// @param depositIndex Index of the deposit to top up
+    /// @param sDAIAmount Amount of sDAI to add
+    /// @param deadline Permit signature deadline
+    /// @param v Permit signature v component
+    /// @param r Permit signature r component
+    /// @param s Permit signature s component
+    function topUpWithPermit(
+        uint256 depositIndex,
+        uint256 sDAIAmount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external nonReentrant {
+        if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
+        if (sDAIAmount == 0) revert ZeroAmount();
+
+        // Execute permit to approve this contract
+        SDAI.permit(msg.sender, address(this), sDAIAmount, deadline, v, r, s);
+
+        // Get current exchange rate
+        uint256 currentRate = SDAI.convertToAssets(1e18);
+
+        // Calculate DAI value at current rate
+        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+
+        // Transfer sDAI from user
+        IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
+
+        // Update deposit
+        Deposit storage userDeposit = userDeposits[msg.sender][depositIndex];
         userDeposit.sDAIAmount += sDAIAmount;
         userDeposit.principalDAI += daiValue;
 

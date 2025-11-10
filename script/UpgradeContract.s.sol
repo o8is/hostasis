@@ -39,7 +39,7 @@ contract UpgradeContract is Script {
         console.log("===========================================");
         console.log("");
         console.log("WARNING: Storage layout check was skipped.");
-        console.log("This upgrade only added the topUp() function.");
+        console.log("This upgrade added the depositWithPermit() function.");
         console.log("No storage variables were modified.");
     }
 }

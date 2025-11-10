@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
 import { formatEther } from 'viem';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
@@ -20,6 +20,7 @@ export default function DepositsList() {
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showUpdateStampModal, setShowUpdateStampModal] = useState(false);
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
 
   // Get user deposit count
   const { data: depositCount, refetch: refetchDepositCount } = useReadContract({
@@ -51,6 +52,7 @@ export default function DepositsList() {
                 key={i}
                 depositIndex={i}
                 userAddress={address!}
+                refetchTrigger={refetchTrigger}
                 onWithdraw={() => {
                   setSelectedDeposit(i);
                   setShowWithdrawModal(true);
@@ -78,6 +80,7 @@ export default function DepositsList() {
           }}
           onWithdrawSuccess={() => {
             refetchDepositCount();
+            setRefetchTrigger(prev => prev + 1);
           }}
         />
       )}
@@ -91,6 +94,7 @@ export default function DepositsList() {
           }}
           onUpdateSuccess={() => {
             refetchDepositCount();
+            setRefetchTrigger(prev => prev + 1);
           }}
         />
       )}
@@ -104,6 +108,7 @@ export default function DepositsList() {
           }}
           onTopUpSuccess={() => {
             refetchDepositCount();
+            setRefetchTrigger(prev => prev + 1);
           }}
         />
       )}
@@ -117,19 +122,28 @@ function DepositCard({
   onWithdraw,
   onUpdateStamp,
   onTopUp,
+  refetchTrigger,
 }: {
   depositIndex: number;
   userAddress: string;
   onWithdraw: () => void;
   onUpdateStamp: () => void;
   onTopUp: () => void;
+  refetchTrigger?: number;
 }) {
-  const { data: deposit } = useReadContract({
+  const { data: deposit, refetch } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
     abi: PostageManagerABI,
     functionName: 'getUserDeposit',
     args: [userAddress, BigInt(depositIndex)],
   });
+
+  // Refetch when trigger changes
+  useEffect(() => {
+    if (refetchTrigger !== undefined && refetchTrigger > 0) {
+      refetch();
+    }
+  }, [refetchTrigger, refetch]);
 
   if (!deposit) return null;
 

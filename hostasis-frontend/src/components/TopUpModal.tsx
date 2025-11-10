@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
-import { useTopUp } from '../hooks/usePostageManager';
+import { useTopUp, useTopUpWithPermit } from '../hooks/usePostageManager';
 import { useSDAIBalance, useSDAIAllowance, useApproveSDAI } from '../hooks/useSDAI';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
@@ -25,8 +25,10 @@ export default function TopUpModal({
   const { address } = useAccount();
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
+  const [usePermit, setUsePermit] = useState(true);
 
   const { topUp, isPending, isConfirming, isSuccess } = useTopUp();
+  const { topUpWithPermit, isPending: isPermitPending, isSigning, isConfirming: isPermitConfirming, isSuccess: isPermitSuccess } = useTopUpWithPermit();
   const { approve, isPending: isApproving, isConfirming: isApprovingConfirming, isSuccess: isApproved } = useApproveSDAI();
   const { data: balance } = useSDAIBalance(address);
   const { data: allowance, refetch: refetchAllowance } = useSDAIAllowance(address);
@@ -73,7 +75,11 @@ export default function TopUpModal({
         return;
       }
 
-      topUp(BigInt(depositIndex), amountBigInt);
+      if (usePermit) {
+        await topUpWithPermit(BigInt(depositIndex), amountBigInt);
+      } else {
+        topUp(BigInt(depositIndex), amountBigInt);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to top up');
     }
@@ -92,7 +98,7 @@ export default function TopUpModal({
 
   // Close modal on success and trigger refetch
   useEffect(() => {
-    if (isSuccess) {
+    if (isSuccess || isPermitSuccess) {
       if (onTopUpSuccess) {
         onTopUpSuccess();
       }
@@ -100,7 +106,7 @@ export default function TopUpModal({
         onClose();
       }, 2000);
     }
-  }, [isSuccess, onClose, onTopUpSuccess]);
+  }, [isSuccess, isPermitSuccess, onClose, onTopUpSuccess]);
 
   const isValidAmount = amount && parseFloat(amount) > 0;
 
@@ -168,12 +174,21 @@ export default function TopUpModal({
           <p className="error-message">{error}</p>
         )}
 
-        {isSuccess && (
+        {(isSuccess || isPermitSuccess) && (
           <p className="success-message">Top up successful!</p>
         )}
 
         <div className="button-group">
-          {needsApproval() ? (
+          {usePermit ? (
+            <button
+              className="view-button"
+              onClick={handleTopUp}
+              disabled={!isValidAmount || isSigning || isPermitPending || isPermitConfirming}
+              style={{ flex: 1 }}
+            >
+              {isSigning ? 'Sign message...' : isPermitConfirming ? 'Confirming...' : isPermitPending ? 'Topping Up...' : 'Top Up'}
+            </button>
+          ) : needsApproval() ? (
             <button
               className="view-button"
               onClick={handleApprove}
@@ -195,11 +210,26 @@ export default function TopUpModal({
           <button
             className="view-button"
             onClick={onClose}
-            disabled={isPending || isConfirming || isApproving || isApprovingConfirming}
+            disabled={isPending || isConfirming || isApproving || isApprovingConfirming || isSigning || isPermitPending}
             style={{ flex: 1, opacity: 0.7 }}
           >
             Cancel
           </button>
+        </div>
+
+        <div className="checkbox-container" onClick={() => setUsePermit(!usePermit)}>
+          <div className="checkbox-wrapper">
+            <input
+              type="checkbox"
+              checked={usePermit}
+              onChange={(e) => setUsePermit(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+          <div className="checkbox-label">
+            <span className="checkbox-label-main">Use gasless approval</span>
+            <span className="checkbox-label-description">Sign once instead of 2 transactions (recommended)</span>
+          </div>
         </div>
       </div>
     </div>
