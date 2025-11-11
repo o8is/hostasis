@@ -346,14 +346,10 @@ contract PostageYieldManagerUpgradeable is
     /// @param v Permit signature v component
     /// @param r Permit signature r component
     /// @param s Permit signature s component
-    function topUpWithPermit(
-        uint256 depositIndex,
-        uint256 sDAIAmount,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) external nonReentrant {
+    function topUpWithPermit(uint256 depositIndex, uint256 sDAIAmount, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
+        external
+        nonReentrant
+    {
         if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
         if (sDAIAmount == 0) revert ZeroAmount();
 
