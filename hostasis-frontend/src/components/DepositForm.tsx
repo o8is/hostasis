@@ -1,37 +1,44 @@
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
 import { parseEther, formatEther, type Hex } from 'viem';
-import { useSDAIBalance, useSDAIAllowance, useApproveSDAI } from '../hooks/useSDAI';
-import { useDeposit, useDepositWithPermit } from '../hooks/usePostageManager';
-import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
+import { useTokenConversion } from '../hooks/useTokenConversion';
+import { useDepositWithPermit } from '../hooks/usePostageManager';
 
 export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: () => void }) {
-  const { address } = useAccount();
   const [amount, setAmount] = useState('');
   const [stampId, setStampId] = useState('');
   const [error, setError] = useState('');
 
-  // Fetch user's sDAI balance
-  const { data: balance, refetch: refetchBalance } = useSDAIBalance(address);
-  const { data: allowance, refetch: refetchAllowance } = useSDAIAllowance(address);
+  const conversion = useTokenConversion();
+  const { depositWithPermit, isPending: isDepositing, isSigning, isConfirming, isSuccess: isDeposited } = useDepositWithPermit();
 
-  // Hooks for approval and deposit
-  const { approve, isPending: isApproving, isConfirming: isApprovingConfirming, isSuccess: isApproved } = useApproveSDAI();
-  const { deposit, isPending: isDepositing, isConfirming: isDepositingConfirming, isSuccess: isDeposited } = useDeposit();
-  const { depositWithPermit, isPending: isPermitDepositing, isSigning, isConfirming: isPermitDepositingConfirming, isSuccess: isPermitDeposited } = useDepositWithPermit();
+  const [depositStep, setDepositStep] = useState('');
 
-  // Prefer permit-based deposit (single transaction)
-  const [usePermit, setUsePermit] = useState(true);
+  // Determine strategy based on detected token
+  const strategy = !conversion.currentToken ? 'NEED_TOKENS'
+    : conversion.currentToken === 'SDAI' ? 'USE_SDAI'
+    : conversion.currentToken === 'WRAPPED_DAI' ? 'CONVERT_DAI'
+    : 'WRAP_XDAI';
 
-  const handleApprove = async () => {
-    try {
-      setError('');
-      const amountBigInt = parseEther(amount);
-      approve(amountBigInt);
-    } catch (err: any) {
-      setError(err.message || 'Failed to approve');
+  // Sync conversion error
+  useEffect(() => {
+    if (conversion.error) {
+      setError(conversion.error);
     }
-  };
+  }, [conversion.error]);
+
+  // Handle successful deposit
+  useEffect(() => {
+    if (isDeposited) {
+      if (onDepositSuccess) {
+        onDepositSuccess();
+      }
+      setAmount('');
+      setStampId('');
+      setError('');
+      setDepositStep('');
+      conversion.resetConversion();
+    }
+  }, [isDeposited, onDepositSuccess, conversion]);
 
   const handleDeposit = async () => {
     try {
@@ -45,76 +52,158 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       }
 
       const amountBigInt = parseEther(amount);
+      const token = conversion.currentToken;
 
-      if (usePermit) {
-        // Use permit-based deposit (single transaction!)
+      if (!token) {
+        setError('You need xDAI, wxDAI, or sDAI to create a deposit');
+        return;
+      }
+
+      if (token === 'SDAI') {
+        // Direct deposit
+        setDepositStep('Depositing sDAI...');
         await depositWithPermit(amountBigInt, normalizedId as Hex);
       } else {
-        // Use traditional deposit (requires prior approval)
-        deposit(amountBigInt, normalizedId as Hex);
+        // Convert then deposit
+        await conversion.convertToSDAI(amountBigInt, token, async (sdaiAmount) => {
+          setDepositStep('Depositing sDAI...');
+          await depositWithPermit(sdaiAmount, normalizedId as Hex);
+        });
       }
     } catch (err: any) {
       setError(err.message || 'Failed to deposit');
+      setDepositStep('');
     }
   };
 
-  // Check if user needs to approve
-  const needsApproval = () => {
-    if (!amount || allowance === undefined) return false;
-    try {
-      const amountBigInt = parseEther(amount);
-      return (allowance as bigint) < amountBigInt;
-    } catch {
-      return false;
+  // Determine balances and token info based on strategy
+  const getBalanceInfo = () => {
+    if (strategy === 'USE_SDAI') {
+      return {
+        hasBalance: conversion.sdaiBalance && (conversion.sdaiBalance as bigint) > 0n,
+        balance: conversion.sdaiBalance,
+        tokenSymbol: 'sDAI',
+        showConversionPreview: false,
+      };
+    } else if (strategy === 'CONVERT_DAI') {
+      return {
+        hasBalance: conversion.daiBalance && (conversion.daiBalance as bigint) > 0n,
+        balance: conversion.daiBalance,
+        tokenSymbol: 'wxDAI',
+        showConversionPreview: true,
+      };
+    } else if (strategy === 'WRAP_XDAI') {
+      return {
+        hasBalance: conversion.nativeBalance && (conversion.nativeBalance as bigint) > 0n,
+        balance: conversion.nativeBalance,
+        tokenSymbol: 'xDAI',
+        showConversionPreview: true,
+      };
     }
+    return {
+      hasBalance: false,
+      balance: 0n,
+      tokenSymbol: 'xDAI/wxDAI/sDAI',
+      showConversionPreview: false,
+    };
   };
 
-  // Refetch allowance after approval
-  useEffect(() => {
-    if (isApproved) {
-      refetchAllowance();
-    }
-  }, [isApproved, refetchAllowance]);
-
-  // Refetch data and notify parent after successful deposit
-  useEffect(() => {
-    if (isDeposited || isPermitDeposited) {
-      refetchBalance();
-      refetchAllowance();
-      if (onDepositSuccess) {
-        onDepositSuccess();
-      }
-      // Reset form
-      setAmount('');
-      setStampId('');
-    }
-  }, [isDeposited, isPermitDeposited, refetchBalance, refetchAllowance, onDepositSuccess]);
-
-  const hasBalance = balance && (balance as bigint) > BigInt(0);
+  const balanceInfo = getBalanceInfo();
   const isValidAmount = amount && parseFloat(amount) > 0;
 
   // Normalize stamp ID - accept with or without 0x prefix
   const normalizedStampId = stampId.startsWith('0x') ? stampId : `0x${stampId}`;
   const isValidStampId = stampId && normalizedStampId.match(/^0x[a-fA-F0-9]{64}$/);
 
+  const currentStep = depositStep || conversion.currentStep;
+  const isLoading = conversion.isLoading || isDepositing || isSigning || isConfirming;
+
+  // Get button text based on strategy and state
+  const getButtonText = () => {
+    if (currentStep) return currentStep;
+    if (isLoading) return 'Processing...';
+
+    if (strategy === 'USE_SDAI') {
+      return 'Deposit sDAI';
+    } else if (strategy === 'CONVERT_DAI') {
+      return 'Convert wxDAI → sDAI & Deposit';
+    } else if (strategy === 'WRAP_XDAI') {
+      return 'Wrap xDAI → wxDAI → sDAI & Deposit';
+    } else {
+      return 'Deposit';
+    }
+  };
+
+  // Get conversion preview
+  const getConversionPreview = () => {
+    if (!balanceInfo.showConversionPreview || !isValidAmount || !conversion.currentToken) return null;
+
+    try {
+      const amountBigInt = parseEther(amount);
+      const expectedSDAI = conversion.previewConversion(amountBigInt, conversion.currentToken);
+      return formatEther(expectedSDAI);
+    } catch {
+      return null;
+    }
+  };
+
+  const conversionPreview = getConversionPreview();
+
   return (
     <div className="info-box" style={{ marginTop: '2rem' }}>
-      <h3 style={{ marginTop: 0 }}>Deposit sDAI</h3>
+      <h3 style={{ marginTop: 0 }}>Create Deposit</h3>
 
-      {hasBalance ? (
-        <p className="description" style={{ fontSize: '0.9rem' }}>
-          Balance: {balance ? formatEther(balance as bigint) : '0'} sDAI
-        </p>
+      {strategy === 'USE_SDAI' && balanceInfo.hasBalance ? (
+        <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+          <p style={{ margin: '0.25rem 0' }}>
+            sDAI Balance: {formatEther(balanceInfo.balance as bigint)}
+          </p>
+        </div>
+      ) : null}
+      {strategy === 'CONVERT_DAI' && balanceInfo.hasBalance ? (
+        <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+          <p style={{ margin: '0.25rem 0' }}>
+            wxDAI Balance: {formatEther(balanceInfo.balance as bigint)}
+          </p>
+          <p style={{ margin: '0.25rem 0', fontSize: '0.85rem', opacity: 0.8 }}>
+            We&apos;ll convert your wxDAI to sDAI automatically
+          </p>
+        </div>
+      ) : null}
+      {strategy === 'WRAP_XDAI' && balanceInfo.hasBalance ? (
+        <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+          <p style={{ margin: '0.25rem 0' }}>
+            xDAI Balance: {formatEther(balanceInfo.balance as bigint)}
+          </p>
+          <p style={{ margin: '0.25rem 0', fontSize: '0.85rem', opacity: 0.8 }}>
+            We&apos;ll wrap to wxDAI, convert to sDAI, then deposit
+          </p>
+        </div>
+      ) : null}
+      {strategy === 'NEED_TOKENS' ? (
+        <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
+          <p style={{ margin: '0.25rem 0', color: '#ff6b6b' }}>
+            You need xDAI, wxDAI, or sDAI to create a deposit.{' '}
+            <a
+              href="https://bridge.gnosischain.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#7a7a7a', textDecoration: 'underline' }}
+            >
+              Get xDAI on Gnosis
+            </a>
+          </p>
+        </div>
       ) : null}
 
       <div className="hash-input-container">
         <input
           type="text"
           className="hash-input"
-          placeholder="Amount (sDAI)"
+          placeholder={`Amount (${balanceInfo.tokenSymbol})`}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          disabled={isApproving || isDepositing}
+          disabled={isLoading || !balanceInfo.hasBalance}
         />
       </div>
 
@@ -122,10 +211,10 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
         <input
           type="text"
           className="hash-input"
-          placeholder="Swarm Batch ID (0x...)"
+          placeholder="Swarm Batch ID (00...)"
           value={stampId}
           onChange={(e) => setStampId(e.target.value)}
-          disabled={isApproving || isDepositing}
+          disabled={isLoading || !balanceInfo.hasBalance}
         />
       </div>
 
@@ -133,58 +222,25 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
         <p className="error-message">{error}</p>
       )}
 
-      {(isDeposited || isPermitDeposited) && (
+      {isDeposited && (
         <p className="success-message">Deposit successful!</p>
       )}
 
-      <div className="button-group">
-        {usePermit ? (
-          <button
-            className="view-button"
-            onClick={handleDeposit}
-            disabled={!isValidAmount || !isValidStampId || isSigning || isPermitDepositing || isPermitDepositingConfirming}
-          >
-            {isSigning ? 'Sign message...' : isPermitDepositingConfirming ? 'Confirming...' : isPermitDepositing ? 'Depositing...' : 'Deposit'}
-          </button>
-        ) : needsApproval() ? (
-          <button
-            className="view-button"
-            onClick={handleApprove}
-            disabled={!isValidAmount || isApproving || isApprovingConfirming}
-          >
-            {isApprovingConfirming ? 'Confirming...' : isApproving ? 'Approving...' : 'Approve sDAI'}
-          </button>
-        ) : (
-          <button
-            className="view-button"
-            onClick={handleDeposit}
-            disabled={!isValidAmount || !isValidStampId || isDepositing || isDepositingConfirming}
-          >
-            {isDepositingConfirming ? 'Confirming...' : isDepositing ? 'Depositing...' : 'Deposit'}
-          </button>
-        )}
-      </div>
-
-      <div className="checkbox-container" onClick={() => setUsePermit(!usePermit)}>
-        <div className="checkbox-wrapper">
-          <input
-            type="checkbox"
-            checked={usePermit}
-            onChange={(e) => setUsePermit(e.target.checked)}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-        <div className="checkbox-label">
-          <span className="checkbox-label-main">Use gasless approval</span>
-          <span className="checkbox-label-description">Sign once instead of 2 transactions (recommended)</span>
-        </div>
-      </div>
-
-      {!hasBalance && (
-        <p className="description" style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
-          You need sDAI to deposit. Get sDAI on Gnosis Chain first.
+      {currentStep && (
+        <p className="description" style={{ fontSize: '0.9rem', marginTop: '1rem' }}>
+          {currentStep}
         </p>
       )}
+
+      <div className="button-group">
+        <button
+          className="view-button"
+          onClick={handleDeposit}
+          disabled={!isValidAmount || !isValidStampId || isLoading || !balanceInfo.hasBalance}
+        >
+          {getButtonText()}
+        </button>
+      </div>
     </div>
   );
 }

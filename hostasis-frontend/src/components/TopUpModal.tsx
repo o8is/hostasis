@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
 import { formatEther, parseEther } from 'viem';
-import { useTopUp, useTopUpWithPermit } from '../hooks/usePostageManager';
-import { useSDAIBalance, useSDAIAllowance, useApproveSDAI } from '../hooks/useSDAI';
+import { useTokenConversion } from '../hooks/useTokenConversion';
+import { useTopUpWithPermit } from '../hooks/usePostageManager';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 
@@ -24,14 +24,10 @@ export default function TopUpModal({
 }) {
   const { address } = useAccount();
   const [amount, setAmount] = useState('');
-  const [error, setError] = useState('');
-  const [usePermit, setUsePermit] = useState(true);
+  const [topUpStep, setTopUpStep] = useState('');
 
-  const { topUp, isPending, isConfirming, isSuccess } = useTopUp();
-  const { topUpWithPermit, isPending: isPermitPending, isSigning, isConfirming: isPermitConfirming, isSuccess: isPermitSuccess } = useTopUpWithPermit();
-  const { approve, isPending: isApproving, isConfirming: isApprovingConfirming, isSuccess: isApproved } = useApproveSDAI();
-  const { data: balance } = useSDAIBalance(address);
-  const { data: allowance, refetch: refetchAllowance } = useSDAIAllowance(address);
+  const conversion = useTokenConversion();
+  const { topUpWithPermit, isPending: isTopping, isSigning, isConfirming: isTopUpConfirming, isSuccess: isTopUpSuccess } = useTopUpWithPermit();
 
   // Get deposit details
   const { data: deposit } = useReadContract({
@@ -42,46 +38,55 @@ export default function TopUpModal({
   });
 
   const depositData = deposit as unknown as Deposit | undefined;
-  const maxAmount = balance ? formatEther(balance as bigint) : '0';
 
-  // Check if user needs to approve
-  const needsApproval = () => {
-    if (!amount || allowance === undefined) return false;
-    try {
-      const amountBigInt = parseEther(amount);
-      return (allowance as bigint) < amountBigInt;
-    } catch {
-      return false;
-    }
+  // Determine which balance to show based on detected token
+  const getBalance = () => {
+    if (!conversion.currentToken) return 0n;
+    if (conversion.currentToken === 'SDAI') return (conversion.sdaiBalance as bigint) || 0n;
+    if (conversion.currentToken === 'WRAPPED_DAI') return (conversion.daiBalance as bigint) || 0n;
+    if (conversion.currentToken === 'NATIVE_XDAI') return conversion.nativeBalance || 0n;
+    return 0n;
   };
 
-  const handleApprove = async () => {
-    try {
-      setError('');
-      const amountBigInt = parseEther(amount);
-      approve(amountBigInt);
-    } catch (err: any) {
-      setError(err.message || 'Failed to approve');
-    }
+  const getTokenLabel = () => {
+    if (!conversion.currentToken) return 'tokens';
+    if (conversion.currentToken === 'SDAI') return 'sDAI';
+    if (conversion.currentToken === 'WRAPPED_DAI') return 'wxDAI';
+    if (conversion.currentToken === 'NATIVE_XDAI') return 'xDAI';
+    return 'tokens';
   };
+
+  const balance = getBalance();
+  const tokenLabel = getTokenLabel();
+  const maxAmount = formatEther(balance);
 
   const handleTopUp = async () => {
     try {
-      setError('');
       const amountBigInt = parseEther(amount);
+      const token = conversion.currentToken;
 
-      if (balance && amountBigInt > (balance as bigint)) {
-        setError('Amount exceeds balance');
+      if (balance && amountBigInt > balance) {
         return;
       }
 
-      if (usePermit) {
+      if (!token) {
+        return;
+      }
+
+      if (token === 'SDAI') {
+        // Direct top up
+        setTopUpStep('Topping up with sDAI...');
         await topUpWithPermit(BigInt(depositIndex), amountBigInt);
       } else {
-        topUp(BigInt(depositIndex), amountBigInt);
+        // Convert then top up
+        await conversion.convertToSDAI(amountBigInt, token, async (sdaiAmount) => {
+          setTopUpStep('Topping up with sDAI...');
+          await topUpWithPermit(BigInt(depositIndex), sdaiAmount);
+        });
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to top up');
+      setTopUpStep('');
+      // Error is handled by conversion hook
     }
   };
 
@@ -89,25 +94,23 @@ export default function TopUpModal({
     setAmount(maxAmount);
   };
 
-  // Refetch allowance after approval
-  useEffect(() => {
-    if (isApproved) {
-      refetchAllowance();
-    }
-  }, [isApproved, refetchAllowance]);
-
   // Close modal on success and trigger refetch
   useEffect(() => {
-    if (isSuccess || isPermitSuccess) {
+    if (isTopUpSuccess) {
       if (onTopUpSuccess) {
         onTopUpSuccess();
       }
       setTimeout(() => {
         onClose();
       }, 2000);
+      conversion.resetConversion();
+      setTopUpStep('');
     }
-  }, [isSuccess, isPermitSuccess, onClose, onTopUpSuccess]);
+  }, [isTopUpSuccess, onClose, onTopUpSuccess, conversion]);
 
+  const currentStep = topUpStep || conversion.currentStep;
+  const error = conversion.error;
+  const isLoading = conversion.isLoading || isTopping || isSigning || isTopUpConfirming;
   const isValidAmount = amount && parseFloat(amount) > 0;
 
   return (
@@ -141,8 +144,21 @@ export default function TopUpModal({
         )}
 
         <p className="description">
-          Available: {maxAmount} sDAI
+          Available: {maxAmount} {tokenLabel}
         </p>
+
+        {conversion.currentToken && conversion.currentToken !== 'SDAI' && (
+          <p className="description" style={{ fontSize: '0.85rem', color: '#b0b0b0' }}>
+            {conversion.currentToken === 'NATIVE_XDAI' && "We'll wrap to wxDAI, convert to sDAI, then top up"}
+            {conversion.currentToken === 'WRAPPED_DAI' && "We'll convert to sDAI then top up"}
+          </p>
+        )}
+
+        {currentStep && (
+          <p className="description" style={{ fontSize: '0.9rem', color: '#4a9eff' }}>
+            {currentStep}
+          </p>
+        )}
 
         <div className="hash-input-container" style={{ marginTop: '1rem' }}>
           <input
@@ -151,7 +167,7 @@ export default function TopUpModal({
             placeholder="Amount to add"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            disabled={isPending || isConfirming || isApproving || isApprovingConfirming}
+            disabled={isLoading}
           />
         </div>
 
@@ -174,62 +190,31 @@ export default function TopUpModal({
           <p className="error-message">{error}</p>
         )}
 
-        {(isSuccess || isPermitSuccess) && (
+        {isTopUpSuccess && (
           <p className="success-message">Top up successful!</p>
         )}
 
+        {!conversion.currentToken && (
+          <p className="error-message">You need xDAI, wxDAI, or sDAI to top up</p>
+        )}
+
         <div className="button-group">
-          {usePermit ? (
-            <button
-              className="view-button"
-              onClick={handleTopUp}
-              disabled={!isValidAmount || isSigning || isPermitPending || isPermitConfirming}
-              style={{ flex: 1 }}
-            >
-              {isSigning ? 'Sign message...' : isPermitConfirming ? 'Confirming...' : isPermitPending ? 'Topping Up...' : 'Top Up'}
-            </button>
-          ) : needsApproval() ? (
-            <button
-              className="view-button"
-              onClick={handleApprove}
-              disabled={!isValidAmount || isApproving || isApprovingConfirming}
-              style={{ flex: 1 }}
-            >
-              {isApprovingConfirming ? 'Confirming...' : isApproving ? 'Approving...' : 'Approve sDAI'}
-            </button>
-          ) : (
-            <button
-              className="view-button"
-              onClick={handleTopUp}
-              disabled={!isValidAmount || isPending || isConfirming}
-              style={{ flex: 1 }}
-            >
-              {isConfirming ? 'Confirming...' : isPending ? 'Topping Up...' : 'Top Up'}
-            </button>
-          )}
+          <button
+            className="view-button"
+            onClick={handleTopUp}
+            disabled={!isValidAmount || isLoading || !conversion.currentToken}
+            style={{ flex: 1 }}
+          >
+            {isLoading ? (currentStep || 'Processing...') : 'Top Up'}
+          </button>
           <button
             className="view-button"
             onClick={onClose}
-            disabled={isPending || isConfirming || isApproving || isApprovingConfirming || isSigning || isPermitPending}
+            disabled={isLoading}
             style={{ flex: 1, opacity: 0.7 }}
           >
             Cancel
           </button>
-        </div>
-
-        <div className="checkbox-container" onClick={() => setUsePermit(!usePermit)}>
-          <div className="checkbox-wrapper">
-            <input
-              type="checkbox"
-              checked={usePermit}
-              onChange={(e) => setUsePermit(e.target.checked)}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-          <div className="checkbox-label">
-            <span className="checkbox-label-main">Use gasless approval</span>
-            <span className="checkbox-label-description">Sign once instead of 2 transactions (recommended)</span>
-          </div>
         </div>
       </div>
     </div>

@@ -78,3 +78,26 @@ export function useSDAIDomainSeparator() {
     functionName: 'DOMAIN_SEPARATOR',
   });
 }
+
+export function useConvertDAIToSDAI() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const convert = (daiAmount: bigint, receiver: Address) => {
+    writeContract({
+      address: SDAI_ADDRESS,
+      abi: sDAI_ABI,
+      functionName: 'deposit',
+      args: [daiAmount, receiver],
+    });
+  };
+
+  return {
+    convert,
+    hash,
+    isPending,
+    isConfirming,
+    isSuccess,
+    error,
+  };
+}
