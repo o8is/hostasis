@@ -6,6 +6,7 @@ import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
 
 import { config } from '../wagmi';
 import BackgroundCanvas from '../components/BackgroundCanvas';
+import { NetworkStatus } from '../components/NetworkStatus';
 
 import '@rainbow-me/rainbowkit/styles.css';
 import '@o8is/brand/o8-brand.css';
@@ -28,6 +29,7 @@ function MyApp({ Component, pageProps }: AppProps) {
           showRecentTransactions={true}
         >
           <BackgroundCanvas />
+          <NetworkStatus />
           <Component {...pageProps} />
         </RainbowKitProvider>
       </QueryClientProvider>
