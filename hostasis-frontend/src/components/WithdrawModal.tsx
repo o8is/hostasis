@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
-import { formatEther, parseEther } from 'viem';
+import { parseEther } from 'viem';
 import { useWithdraw } from '../hooks/usePostageManager';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
+import TokenAmount from './TokenAmount';
+import { formatTokenAmountFull } from '../utils/formatters';
 
 type Deposit = {
   sDAIAmount: bigint;
@@ -36,7 +38,7 @@ export default function WithdrawModal({
   });
 
   const depositData = deposit as unknown as Deposit | undefined;
-  const maxAmount = depositData ? formatEther(depositData.sDAIAmount) : '0';
+  const maxAmount = depositData ? formatTokenAmountFull(depositData.sDAIAmount) : '0';
 
   const handleWithdraw = async () => {
     try {
@@ -95,7 +97,7 @@ export default function WithdrawModal({
         <h3 style={{ marginTop: 0 }}>Withdraw from Deposit #{depositIndex}</h3>
 
         <p className="description">
-          Available: {maxAmount} sDAI
+          Available: <TokenAmount value={depositData?.sDAIAmount} symbol="sDAI" />
         </p>
 
         <div className="hash-input-container" style={{ marginTop: '1rem' }}>

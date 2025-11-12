@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { parseEther, formatEther, type Hex } from 'viem';
+import { parseEther, type Hex } from 'viem';
 import { useTokenConversion } from '../hooks/useTokenConversion';
 import { useDepositWithPermit } from '../hooks/usePostageManager';
+import TokenAmount from './TokenAmount';
+import { formatTokenAmount } from '../utils/formatters';
 
 export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: () => void }) {
   const [amount, setAmount] = useState('');
@@ -141,7 +143,7 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
     try {
       const amountBigInt = parseEther(amount);
       const expectedSDAI = conversion.previewConversion(amountBigInt, conversion.currentToken);
-      return formatEther(expectedSDAI);
+      return formatTokenAmount(expectedSDAI);
     } catch {
       return null;
     }
@@ -156,14 +158,14 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       {strategy === 'USE_SDAI' && balanceInfo.hasBalance ? (
         <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
           <p style={{ margin: '0.25rem 0' }}>
-            sDAI Balance: {formatEther(balanceInfo.balance as bigint)}
+            sDAI Balance: <TokenAmount value={balanceInfo.balance as bigint} />
           </p>
         </div>
       ) : null}
       {strategy === 'CONVERT_DAI' && balanceInfo.hasBalance ? (
         <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
           <p style={{ margin: '0.25rem 0' }}>
-            wxDAI Balance: {formatEther(balanceInfo.balance as bigint)}
+            wxDAI Balance: <TokenAmount value={balanceInfo.balance as bigint} />
           </p>
           <p style={{ margin: '0.25rem 0', fontSize: '0.85rem', opacity: 0.8 }}>
             We&apos;ll convert your wxDAI to sDAI automatically
@@ -173,7 +175,7 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       {strategy === 'WRAP_XDAI' && balanceInfo.hasBalance ? (
         <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
           <p style={{ margin: '0.25rem 0' }}>
-            xDAI Balance: {formatEther(balanceInfo.balance as bigint)}
+            xDAI Balance: <TokenAmount value={balanceInfo.balance as bigint} />
           </p>
           <p style={{ margin: '0.25rem 0', fontSize: '0.85rem', opacity: 0.8 }}>
             We&apos;ll wrap to wxDAI, convert to sDAI, then deposit

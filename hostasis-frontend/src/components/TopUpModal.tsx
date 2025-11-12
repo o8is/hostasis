@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
-import { formatEther, parseEther } from 'viem';
+import { parseEther } from 'viem';
 import { useTokenConversion } from '../hooks/useTokenConversion';
 import { useTopUpWithPermit } from '../hooks/usePostageManager';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
+import TokenAmount from './TokenAmount';
+import { formatTokenAmountFull } from '../utils/formatters';
 
 type Deposit = {
   sDAIAmount: bigint;
@@ -58,7 +60,7 @@ export default function TopUpModal({
 
   const balance = getBalance();
   const tokenLabel = getTokenLabel();
-  const maxAmount = formatEther(balance);
+  const maxAmount = formatTokenAmountFull(balance);
 
   const handleTopUp = async () => {
     try {
@@ -139,12 +141,12 @@ export default function TopUpModal({
 
         {depositData && (
           <p className="description">
-            Current: {formatEther(depositData.sDAIAmount)} sDAI
+            Current: <TokenAmount value={depositData.sDAIAmount} symbol="sDAI" />
           </p>
         )}
 
         <p className="description">
-          Available: {maxAmount} {tokenLabel}
+          Available: <TokenAmount value={balance} symbol={tokenLabel} />
         </p>
 
         {conversion.currentToken && conversion.currentToken !== 'SDAI' && (

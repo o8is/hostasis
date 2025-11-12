@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
-import { formatEther } from 'viem';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import WithdrawModal from './WithdrawModal';
 import UpdateStampModal from './UpdateStampModal';
 import TopUpModal from './TopUpModal';
+import TokenAmount from './TokenAmount';
 
 type Deposit = {
   sDAIAmount: bigint;
@@ -161,10 +161,7 @@ function DepositCard({
 
       <div style={{ fontSize: '0.9rem', lineHeight: '1.8' }}>
         <p>
-          <strong>sDAI Amount:</strong> {formatEther(depositData.sDAIAmount)} sDAI
-        </p>
-        <p>
-          <strong>Principal (DAI):</strong> {formatEther(depositData.principalDAI)} DAI
+          <strong>Deposited:</strong> <TokenAmount value={depositData.principalDAI} symbol="DAI" />
         </p>
         <p style={{ wordBreak: 'break-all' }}>
           <strong>Batch ID:</strong> {depositData.stampId}
