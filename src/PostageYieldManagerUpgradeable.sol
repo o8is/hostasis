@@ -97,6 +97,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     struct Deposit {
         uint256 sDAIAmount; // Amount of sDAI shares deposited
         uint256 principalDAI; // DAI value at time of deposit (prevents yield theft)
+        uint256 lastYieldPerShare; // Dividend tracking: yieldPerShare value at last claim
         bytes32 stampId; // Swarm postage batch ID to fund
         uint256 depositTime; // Timestamp of deposit
     }
@@ -122,11 +123,17 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @notice Accumulated keeper fees (in DAI)
     uint256 public keeperFeePool;
 
+    /// @notice Dividend accumulator: total DAI yield per sDAI share (scaled by 1e18)
+    /// @dev This is a monotonically increasing value that tracks cumulative yield distribution
+    uint256 public yieldPerShare;
+
     /// @notice Distribution state
     struct DistributionState {
         uint256 totalBZZ; // Total BZZ to distribute
         uint256 cursor; // Current position in activeUsers array
-        uint256 snapshotTotalSDAI; // Total sDAI at time of harvest
+        uint256 harvestYieldPerShare; // Snapshot of yieldPerShare at harvest time
+        uint256 totalYieldDAI; // Total yield in DAI for this harvest
+        uint256 snapshotRate; // Exchange rate (DAI per sDAI) at time of harvest
         bool active; // Is distribution ongoing
     }
     DistributionState public distributionState;
@@ -172,7 +179,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         POSTAGE_STAMP = IPostageStamp(_postageStamp);
         routeProcessor = IRouteProcessor2(_routeProcessor);
         bzzWxdaiPool = _bzzWxdaiPool;
-        minYieldThreshold = 0.25e18; // 0.25 DAI minimum
+        minYieldThreshold = 0.01 ether; // 0.01 DAI minimum
         maxSlippageBps = 500; // 5% max slippage
         harvesterFeeBps = 50; // 0.5% harvester fee
         keeperFeeBps = 100; // 1% keeper fee
@@ -203,7 +210,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         // Create deposit record
         depositIndex = userDeposits[msg.sender].length;
         userDeposits[msg.sender].push(
-            Deposit({sDAIAmount: sDAIAmount, principalDAI: daiValue, stampId: stampId, depositTime: block.timestamp})
+            Deposit({
+                sDAIAmount: sDAIAmount,
+                principalDAI: daiValue,
+                lastYieldPerShare: yieldPerShare, // Initialize to current accumulator value
+                stampId: stampId,
+                depositTime: block.timestamp
+            })
         );
 
         // Update global tracking
@@ -247,7 +260,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         // Create deposit record
         depositIndex = userDeposits[msg.sender].length;
         userDeposits[msg.sender].push(
-            Deposit({sDAIAmount: sDAIAmount, principalDAI: daiValue, stampId: stampId, depositTime: block.timestamp})
+            Deposit({
+                sDAIAmount: sDAIAmount,
+                principalDAI: daiValue,
+                lastYieldPerShare: yieldPerShare, // Initialize to current accumulator value
+                stampId: stampId,
+                depositTime: block.timestamp
+            })
         );
 
         // Update global tracking
@@ -429,43 +448,32 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Harvest yield and prepare for distribution
-    /// @dev Swaps (yield - harvester fee - keeper fees) to BZZ, sets up or adds to batch distribution
-    /// @dev Can be called multiple times to accumulate fees before keeper processes batches
+    /// @dev Swaps (yield - harvester fee - keeper fees) to BZZ, sets up batch distribution
+    /// @dev Cannot be called again until processBatch completes (prevents multiple harvest complexity)
     /// @dev Uses shares-based accounting: user deposit amounts never change, only global totalSDAI changes
     function harvest() external nonReentrant {
+        // Prevent multiple harvests - must complete distribution first
+        if (distributionState.active) revert DistributionInProgress();
+
         uint256 totalYield = previewYield();
         if (totalYield == 0) revert NoYieldAvailable();
         if (totalYield < minYieldThreshold) revert NotEnoughYieldAvailable();
 
-        // Calculate sDAI shares representing the yield
+        // Snapshot exchange rate at harvest time for yield calculations
         uint256 currentRate = SDAI.convertToAssets(1e18);
+
+        // Update dividend accumulator BEFORE reducing totalSDAI
+        // This tracks cumulative yield per share for all deposits
+        uint256 yieldPerShareIncrease = (totalYield * 1e18) / totalSDAI;
+        yieldPerShare += yieldPerShareIncrease;
+
+        // Calculate sDAI shares representing the yield
         uint256 yieldShares = (totalYield * 1e18) / currentRate;
 
-        // Update global accounting only (user shares stay fixed)
+        // Update global accounting: reduce totalSDAI (yield shares removed)
+        // Note: totalPrincipalDAI stays unchanged - principals never change in DAI terms
+        //       Individual deposit sDAIAmounts will be reduced in processBatch to match
         totalSDAI -= yieldShares;
-        // Recalculate principal for remaining shares at current rate
-        totalPrincipalDAI = (totalSDAI * currentRate) / 1e18;
-
-        // Setup or update distribution state
-        if (!distributionState.active) {
-            // Setup new distribution state - snapshot sum of all user shares (NOT totalSDAI)
-            // This ensures correct distribution even after multiple harvest cycles
-            // Calculate total user shares
-            uint256 totalUserShares = 0;
-            for (uint256 i = 0; i < activeUsers.length; i++) {
-                totalUserShares += _getUserTotalSDAI(activeUsers[i]);
-            }
-
-            distributionState = DistributionState({
-                totalBZZ: 0, // Will be set after swap
-                cursor: 0,
-                snapshotTotalSDAI: totalUserShares, // Sum of user shares (fixed)
-                active: true
-            });
-        } else {
-            // Distribution already active - keep the original snapshot
-            // Multiple harvests accumulate BZZ but use the same share basis
-        }
 
         // Redeem sDAI for DAI
         uint256 daiReceived = SDAI.redeem(yieldShares, address(this), address(this));
@@ -485,11 +493,15 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         // Swap remaining DAI -> BZZ
         uint256 bzzReceived = _swapDAIForBZZ(daiToSwap);
 
-        // Add BZZ to distribution (either new or accumulating)
-        if (distributionState.active) {
-            // Add to distribution pool (works for both new distributions and accumulations)
-            distributionState.totalBZZ += bzzReceived;
-        }
+        // Setup distribution state with snapshots
+        distributionState = DistributionState({
+            totalBZZ: bzzReceived,
+            cursor: 0,
+            harvestYieldPerShare: yieldPerShare, // Snapshot of accumulator at harvest
+            totalYieldDAI: totalYield, // Total yield in DAI for this harvest
+            snapshotRate: currentRate, // Exchange rate at harvest
+            active: true
+        });
 
         lastHarvestTime = block.timestamp;
 
@@ -499,7 +511,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @notice Process a batch of distributions (permissionless)
     /// @param batchSize Number of users to process in this batch
     /// @dev Anyone can call this to earn keeper fees proportional to work done
-    /// @dev Uses shares-based accounting: dep.sDAIAmount is user's fixed shares, never modified by harvest
+    /// @dev Distributes BZZ proportional to yield earned (not sDAI shares) to prevent yield theft
     function processBatch(uint256 batchSize) external nonReentrant {
         if (!distributionState.active) revert NoDistributionActive();
         if (keeperFeePool == 0) revert InsufficientKeeperFees();
@@ -528,10 +540,16 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                 Deposit storage dep = deposits[j];
                 if (dep.sDAIAmount == 0) continue;
 
-                // Calculate this deposit's share of total BZZ based on their fixed shares
-                // dep.sDAIAmount = user's shares (fixed, never changed by harvest)
-                // state.snapshotTotalSDAI = total shares at time of harvest snapshot
-                uint256 bzzShare = (state.totalBZZ * dep.sDAIAmount) / state.snapshotTotalSDAI;
+                // Calculate this deposit's unclaimed yield using dividend accumulator
+                // yieldPerShareDelta represents yield earned since last claim
+                uint256 yieldPerShareDelta = state.harvestYieldPerShare - dep.lastYieldPerShare;
+                uint256 depositYield = (dep.sDAIAmount * yieldPerShareDelta) / 1e18;
+
+                // Calculate sDAI shares that represent this yield (to be consumed)
+                uint256 depositYieldShares = depositYield > 0 ? (depositYield * 1e18) / state.snapshotRate : 0;
+
+                // Distribute BZZ proportional to yield (not shares!)
+                uint256 bzzShare = depositYield > 0 ? (state.totalBZZ * depositYield) / state.totalYieldDAI : 0;
 
                 if (bzzShare > 0) {
                     // Get batch depth to calculate per-chunk amount
@@ -555,6 +573,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                         emit StampToppedUp(dep.stampId, actualTotal, user);
                     }
                 }
+
+                // Update deposit accounting: reduce shares and update claim point
+                // This keeps sum(deposit.sDAIAmount) = totalSDAI invariant
+                if (depositYieldShares > 0 && depositYieldShares <= dep.sDAIAmount) {
+                    dep.sDAIAmount -= depositYieldShares;
+                }
+                dep.lastYieldPerShare = state.harvestYieldPerShare;
             }
 
             usersProcessed++;

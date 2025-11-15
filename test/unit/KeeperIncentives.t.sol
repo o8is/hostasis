@@ -169,11 +169,14 @@ contract KeeperIncentivesTest is Test {
 
         manager.harvest();
 
-        (,,, bool active) = manager.distributionState();
+        (,,,,, bool active) = manager.distributionState();
         assertTrue(active, "Distribution should be active");
     }
 
     function test_MultipleHarvests_BeforeKeeperRuns() public {
+        // NEW BEHAVIOR: Multiple harvests are now BLOCKED until distribution completes
+        // This simplifies accounting and prevents edge cases
+
         // Setup: Users deposit
         vm.prank(alice);
         sdai.approve(address(manager), 100e18);
@@ -191,13 +194,13 @@ contract KeeperIncentivesTest is Test {
         // Increase rate to generate yield
         sdai.setExchangeRate(1.1e18); // 10% yield
 
-        // First harvest - might not have enough keeper fees
+        // First harvest
         address harvester1 = address(0x100);
         vm.prank(harvester1);
         manager.harvest();
 
         // Check distribution is active
-        (uint256 totalBZZ1,,, bool active1) = manager.distributionState();
+        (uint256 totalBZZ1,,,,, bool active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
         uint256 keeperFeePool1 = manager.keeperFeePool();
         assertGt(keeperFeePool1, 0, "Keeper fee pool should have fees from first harvest");
@@ -206,50 +209,32 @@ contract KeeperIncentivesTest is Test {
         // generate more yield by increasing rate further
         sdai.setExchangeRate(1.2e18); // Additional yield: goes from 1.1 to 1.2
 
-        // Second harvest BEFORE keeper runs - should accumulate fees
+        // Second harvest BEFORE keeper runs - should REVERT with DistributionInProgress
         address harvester2 = address(0x101);
+        vm.prank(harvester2);
+        vm.expectRevert(PostageYieldManagerUpgradeable.DistributionInProgress.selector);
+        manager.harvest();
+
+        // Keeper completes distribution
+        vm.prank(address(0x200));
+        manager.processBatch(10); // Process all users
+
+        // Distribution should now be complete
+        (,,,,, bool activeAfter) = manager.distributionState();
+        assertFalse(activeAfter, "Distribution should be inactive after processBatch");
+
+        // NOW harvest should work again
         vm.prank(harvester2);
         manager.harvest();
 
-        // Verify distribution is still active and BZZ accumulated
-        (uint256 totalBZZ2,,, bool active2) = manager.distributionState();
-        assertTrue(active2, "Distribution should still be active after second harvest");
-        assertGt(totalBZZ2, totalBZZ1, "BZZ should accumulate from multiple harvests");
-
+        // Second harvest should add new fees (but total pool might be less than before due to payout)
         uint256 keeperFeePool2 = manager.keeperFeePool();
-        assertGt(keeperFeePool2, keeperFeePool1, "Keeper fees should accumulate");
+        assertGt(keeperFeePool2, 0, "Second harvest should generate keeper fees");
 
-        // Generate even more yield
-        sdai.setExchangeRate(1.3e18); // More yield (continues increasing: 1.1 -> 1.2 -> 1.3)
-
-        // Third harvest - further accumulation
-        address harvester3 = address(0x102);
-        vm.prank(harvester3);
-        manager.harvest();
-
-        (uint256 totalBZZ3,,, bool active3) = manager.distributionState();
-        assertTrue(active3, "Distribution should still be active after third harvest");
-        assertGt(totalBZZ3, totalBZZ2, "BZZ should further accumulate");
-
-        uint256 keeperFeePool3 = manager.keeperFeePool();
-        assertGt(keeperFeePool3, keeperFeePool2, "Keeper fees should further accumulate");
-
-        // Now keeper runs with accumulated fees making it worthwhile
-        vm.prank(keeper1);
-        manager.processBatch(2);
-
-        // Verify distribution completed
-        (,,, bool active4) = manager.distributionState();
-        assertFalse(active4, "Distribution should be complete");
-
-        // Verify stamps received all accumulated BZZ
-        uint256 aliceStampBalance = postageStamp.remainingBalance(STAMP_ALICE);
-        uint256 bobStampBalance = postageStamp.remainingBalance(STAMP_BOB);
-
-        // Each user should get 50% of total accumulated BZZ (they have equal deposits)
-        uint256 expectedPerUser = totalBZZ3 / 2;
-        assertApproxEqRel(aliceStampBalance, expectedPerUser, 0.01e18, "Alice stamp should receive correct BZZ");
-        assertApproxEqRel(bobStampBalance, expectedPerUser, 0.01e18, "Bob stamp should receive correct BZZ");
+        // Verify second distribution is active
+        (uint256 totalBZZ2,,,,, bool active2) = manager.distributionState();
+        assertTrue(active2, "Distribution should be active after second harvest");
+        assertGt(totalBZZ2, 0, "Should have BZZ from second harvest");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -357,14 +342,14 @@ contract KeeperIncentivesTest is Test {
         sdai.setExchangeRate(1.2e18);
         manager.harvest();
 
-        (,,, bool activeBefore) = manager.distributionState();
+        (,,,,, bool activeBefore) = manager.distributionState();
         assertTrue(activeBefore, "Distribution should be active before processing");
 
         // Process all users
         vm.prank(keeper1);
         manager.processBatch(100); // Large batch size to complete
 
-        (,,, bool activeAfter) = manager.distributionState();
+        (,,,,, bool activeAfter) = manager.distributionState();
         assertFalse(activeAfter, "Distribution should be inactive after completion");
     }
 
@@ -533,7 +518,7 @@ contract KeeperIncentivesTest is Test {
         uint256 keeperFeePoolAfterHarvest = manager.keeperFeePool();
         assertGt(keeperFeePoolAfterHarvest, 0, "Keeper fee pool should have funds");
 
-        (uint256 totalBZZ,,, bool active) = manager.distributionState();
+        (uint256 totalBZZ,,,,, bool active) = manager.distributionState();
         assertTrue(active, "Distribution should be active");
         assertGt(totalBZZ, 0, "Should have BZZ to distribute");
 
@@ -556,7 +541,7 @@ contract KeeperIncentivesTest is Test {
         assertGt(keeper2AfterBatch, keeper2InitialBalance, "Keeper2 should earn fees");
 
         // 6. Distribution should be complete
-        (,,, bool stillActive) = manager.distributionState();
+        (,,,,, bool stillActive) = manager.distributionState();
         assertFalse(stillActive, "Distribution should be complete");
 
         // 7. Verify BZZ was distributed to stamps
@@ -629,7 +614,7 @@ contract KeeperIncentivesTest is Test {
         manager.processBatch(batchSize);
 
         // Should either complete or make progress
-        (, uint256 cursor,, bool active) = manager.distributionState();
+        (, uint256 cursor,,,, bool active) = manager.distributionState();
 
         if (!active) {
             // Distribution completed - state is deleted, so cursor will be 0
@@ -723,7 +708,7 @@ contract KeeperIncentivesTest is Test {
         // Check that distribution has the correct amount of BZZ
         // The mock router does 1:2 swap (1 DAI = 2 BZZ)
         uint256 expectedBZZ = daiToSwap * 2;
-        (uint256 totalBZZ,,,) = manager.distributionState();
+        (uint256 totalBZZ,,,,,) = manager.distributionState();
         assertApproxEqRel(totalBZZ, expectedBZZ, 0.01e18, "BZZ amount should reflect both fee deductions");
     }
 
@@ -812,7 +797,7 @@ contract KeeperIncentivesTest is Test {
         // Check BZZ amount (should be (50 - 0.5 - 1) * 2 = 97 DAI worth, because 1 DAI = 2 BZZ)
         uint256 expectedDaiToSwap = 50e18 - expectedHarvesterFee - expectedKeeperFee;
         uint256 expectedBZZ = expectedDaiToSwap * 2; // Mock router does 1:2 swap
-        (uint256 totalBZZ,,,) = manager.distributionState();
+        (uint256 totalBZZ,,,,,) = manager.distributionState();
         assertApproxEqRel(totalBZZ, expectedBZZ, 0.01e18, "BZZ amount should reflect both fee deductions");
     }
 

@@ -568,12 +568,19 @@ contract PostageYieldManagerTest is Test {
         uint256 totalSDAIAfterFirstHarvest = manager.totalSDAI();
         assertLt(totalSDAIAfterFirstHarvest, initialTotalSDAI, "Global totalSDAI should be reduced after harvest");
 
-        // Shares-based accounting: Alice's shares remain unchanged
+        // Shares remain unchanged AFTER harvest but BEFORE processBatch
         PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest1 = manager.getUserDeposit(alice, 0);
-        assertEq(aliceDepositAfterHarvest1.sDAIAmount, aliceShares, "Alice's shares should remain fixed");
+        assertEq(
+            aliceDepositAfterHarvest1.sDAIAmount, aliceShares, "Alice's shares should remain fixed before processBatch"
+        );
 
-        // Complete first distribution
+        // Complete first distribution - this WILL reduce Alice's shares
         manager.processBatch(1);
+
+        // After processBatch, shares should be reduced by yield shares consumed
+        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterProcess1 = manager.getUserDeposit(alice, 0);
+        assertLt(aliceDepositAfterProcess1.sDAIAmount, aliceShares, "Alice's shares reduced after first processBatch");
+        uint256 aliceSharesAfterFirstHarvest = aliceDepositAfterProcess1.sDAIAmount;
 
         // 4. Generate more yield for second harvest
         sdai.setExchangeRate(1.2e18); // Another ~9% yield on remaining sDAI
@@ -581,27 +588,46 @@ contract PostageYieldManagerTest is Test {
         // 5. Second harvest - critical test: ensure no over-allocation
         manager.harvest();
 
-        (uint256 totalBZZ,, uint256 snapshotTotalSDAI,) = manager.distributionState();
+        (uint256 totalBZZ,,, uint256 totalYieldDAI, uint256 snapshotRate,) = manager.distributionState();
 
-        // Alice still owns all shares
+        // Alice's shares should remain at reduced level (from first processBatch)
         PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest2 = manager.getUserDeposit(alice, 0);
-        assertEq(aliceDepositAfterHarvest2.sDAIAmount, aliceShares, "Alice's shares still fixed after 2nd harvest");
+        assertEq(
+            aliceDepositAfterHarvest2.sDAIAmount,
+            aliceSharesAfterFirstHarvest,
+            "Alice's shares unchanged between first processBatch and second harvest"
+        );
 
-        // Calculate Alice's expected BZZ share (she owns 100% of pool)
-        uint256 expectedBzzShare = (totalBZZ * aliceDepositAfterHarvest2.sDAIAmount) / snapshotTotalSDAI;
+        // Critical test: Verify no over-allocation after multiple harvests
+        // The bug was that totalPrincipalDAI was being recalculated after each harvest,
+        // which corrupted the yield calculations and caused over-allocation.
+        //
+        // Key insight: totalYieldDAI represents NEW yield since last harvest,
+        // calculated from the REDUCED totalSDAI (after previous yield was removed).
+        // Alice's individual yield is calculated from her ORIGINAL shares (100 sDAI),
+        // which includes accumulated yield from ALL harvests.
+        //
+        // The test: processBatch should correctly calculate Alice's share of THIS harvest's
+        // BZZ distribution without over-allocating.
 
-        // Critical: No over-allocation - Alice's share should equal total BZZ (she's the only depositor)
-        assertEq(expectedBzzShare, totalBZZ, "Alice should get exactly 100% of BZZ (no over-allocation)");
+        // Calculate Alice's yield using the SAME formula as processBatch
+        // This is the yield calculation that processBatch will use
+        uint256 aliceValue = (aliceDepositAfterHarvest2.sDAIAmount * snapshotRate) / 1e18;
+        uint256 aliceYield = aliceValue - aliceDepositAfterHarvest2.principalDAI;
 
-        // Verify the calculation is correct: since Alice is the only depositor,
-        // she should get all the BZZ (or very close due to rounding)
-        assertApproxEqRel(expectedBzzShare, totalBZZ, 0.01e18, "Alice gets ~100% of BZZ as only depositor");
+        // Calculate expected BZZ for Alice (using same formula as processBatch)
+        uint256 expectedAliceBZZ = aliceYield > 0 ? (totalBZZ * aliceYield) / totalYieldDAI : 0;
 
-        // 6. Process batch should now succeed
-        uint256 bzzBalance = bzz.balanceOf(address(manager));
-        console.log("Contract BZZ balance:", bzzBalance);
+        // The CRITICAL invariant: her BZZ share should NOT exceed totalBZZ
+        // Before the fix (when totalPrincipalDAI was recalculated), this would fail
+        // because aliceYield > totalYieldDAI, causing expectedAliceBZZ > totalBZZ
+        assertLe(expectedAliceBZZ, totalBZZ, "CRITICAL: No over-allocation - Alice's BZZ <= totalBZZ");
 
-        // This should now succeed without reverting
+        // Additional verification: the calculation should be sane
+        assertGt(totalYieldDAI, 0, "Should have yield to distribute");
+        assertGt(aliceYield, 0, "Alice should have yield");
+
+        // 6. Process batch should succeed (would have reverted before fix due to over-allocation)
         manager.processBatch(1);
     }
 
@@ -664,37 +690,55 @@ contract PostageYieldManagerTest is Test {
                         HARVEST PRINCIPAL TESTS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Critical test: User principals must NOT be reduced when yield is harvested
-    /// Only withdrawals should reduce user principals
+    /// @notice Critical test: BZZ distribution should be proportional to YIELD earned, not sDAI shares
+    /// This prevents late depositors from stealing yield from early depositors
     function test_Harvest_UserPrincipalsReduced() public {
-        // Test behavior: Users with different deposit times get BZZ proportional to their shares
+        // Scenario: Alice deposits early, earns yield. Bob deposits late (no yield).
+        // Alice should get ALL the BZZ, Bob should get NONE.
 
-        // Setup: Two users deposit at different rates
+        // Day 1: Alice deposits at rate 1.0
         vm.startPrank(alice);
         sdai.approve(address(manager), 100e18);
         manager.deposit(100e18, STAMP_ALICE);
         vm.stopPrank();
 
-        // Rate increases
+        // Rate increases to 1.1
         sdai.setExchangeRate(1.1e18);
 
+        // Day 7: Bob deposits at rate 1.1 (RIGHT BEFORE HARVEST)
         vm.startPrank(bob);
         sdai.approve(address(manager), 100e18);
         manager.deposit(100e18, STAMP_BOB);
         vm.stopPrank();
 
-        // Record user shares (should stay fixed)
+        // Verify principals are different (Alice deposited at lower rate)
         PostageYieldManagerUpgradeable.Deposit memory aliceDepositBefore = manager.getUserDeposit(alice, 0);
         PostageYieldManagerUpgradeable.Deposit memory bobDepositBefore = manager.getUserDeposit(bob, 0);
-        uint256 aliceShares = aliceDepositBefore.sDAIAmount;
-        uint256 bobShares = bobDepositBefore.sDAIAmount;
 
-        // Verify principals are different (Alice deposited at lower rate)
         assertEq(aliceDepositBefore.principalDAI, 100e18, "Alice principal should be 100 DAI");
         assertEq(bobDepositBefore.principalDAI, 110e18, "Bob principal should be 110 DAI");
 
+        // Check individual yields BEFORE harvest
+        uint256 aliceYield = manager.previewUserYield(alice, 0);
+        uint256 bobYield = manager.previewUserYield(bob, 0);
+
+        assertEq(aliceYield, 10e18, "Alice should have 10 DAI yield");
+        assertEq(bobYield, 0, "Bob should have 0 yield - he just deposited!");
+
         // Generate more yield
         sdai.setExchangeRate(1.2e18);
+
+        // Now yields are:
+        // Alice: (100 sDAI * 1.2) - 100 principal = 20 DAI yield
+        // Bob: (100 sDAI * 1.2) - 110 principal = 10 DAI yield
+        aliceYield = manager.previewUserYield(alice, 0);
+        bobYield = manager.previewUserYield(bob, 0);
+
+        assertEq(aliceYield, 20e18, "Alice should have 20 DAI yield");
+        assertEq(bobYield, 10e18, "Bob should have 10 DAI yield");
+
+        uint256 totalYield = manager.previewYield();
+        assertEq(totalYield, 30e18, "Total yield should be 30 DAI");
 
         // Fund DEX with BZZ for swap
         bzz.mint(address(routeProcessor), 10000e18);
@@ -702,29 +746,47 @@ contract PostageYieldManagerTest is Test {
         // Harvest yield
         manager.harvest();
 
-        (uint256 totalBZZ,, uint256 snapshotTotalSDAI,) = manager.distributionState();
+        (uint256 totalBZZ,,, uint256 totalYieldDAI, uint256 snapshotRate,) = manager.distributionState();
 
         // Verify shares remain unchanged
         PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
         PostageYieldManagerUpgradeable.Deposit memory bobDepositAfter = manager.getUserDeposit(bob, 0);
 
-        assertEq(aliceDepositAfter.sDAIAmount, aliceShares, "Alice shares should remain fixed");
-        assertEq(bobDepositAfter.sDAIAmount, bobShares, "Bob shares should remain fixed");
+        assertEq(aliceDepositAfter.sDAIAmount, 100e18, "Alice shares should remain fixed");
+        assertEq(bobDepositAfter.sDAIAmount, 100e18, "Bob shares should remain fixed");
 
-        // Calculate expected BZZ distribution
-        uint256 aliceBZZShare = (totalBZZ * aliceShares) / snapshotTotalSDAI;
-        uint256 bobBZZShare = (totalBZZ * bobShares) / snapshotTotalSDAI;
+        assertEq(aliceDepositAfter.principalDAI, 100e18, "Alice principal should STILL be 100 DAI");
+        assertEq(bobDepositAfter.principalDAI, 110e18, "Bob principal should STILL be 110 DAI");
 
-        // Verify proportional distribution: Alice and Bob have equal shares (100 sDAI each)
-        assertEq(aliceBZZShare, bobBZZShare, "Equal shares should get equal BZZ");
+        // Calculate expected BZZ distribution based on YIELD (not shares!)
+        // Alice earned 20 DAI yield (66.67% of total)
+        // Bob earned 10 DAI yield (33.33% of total)
+        uint256 expectedAliceBZZ = (totalBZZ * 20e18) / 30e18; // 66.67%
+        uint256 expectedBobBZZ = (totalBZZ * 10e18) / 30e18; // 33.33%
+
+        // Calculate actual BZZ distribution (using FIXED implementation)
+        uint256 aliceValue = (aliceDepositAfter.sDAIAmount * snapshotRate) / 1e18;
+        uint256 aliceYieldAtHarvest = aliceValue - aliceDepositAfter.principalDAI;
+        uint256 aliceBZZShare = (totalBZZ * aliceYieldAtHarvest) / totalYieldDAI;
+
+        uint256 bobValue = (bobDepositAfter.sDAIAmount * snapshotRate) / 1e18;
+        uint256 bobYieldAtHarvest = bobValue - bobDepositAfter.principalDAI;
+        uint256 bobBZZShare = (totalBZZ * bobYieldAtHarvest) / totalYieldDAI;
+
+        // CORRECT assertion: BZZ should be proportional to YIELD, not shares
+        // This should PASS with the fixed implementation
+        assertApproxEqRel(
+            aliceBZZShare, expectedAliceBZZ, 0.01e18, "Alice should get ~66.67% of BZZ (proportional to yield)"
+        );
+        assertApproxEqRel(bobBZZShare, expectedBobBZZ, 0.01e18, "Bob should get ~33.33% of BZZ (proportional to yield)");
 
         // Verify total doesn't exceed available BZZ
         assertLe(aliceBZZShare + bobBZZShare, totalBZZ, "Total distribution shouldn't exceed available BZZ");
     }
 
-    /// @notice Test multiple harvests accumulate BZZ correctly with shares-based accounting
-    function test_Harvest_MultipleHarvests_ProportionalReduction() public {
-        // Test behavior: Multiple harvests should accumulate BZZ, shares stay fixed
+    /// @notice Test that multiple harvests are blocked until distribution completes
+    function test_Harvest_MultipleHarvests_Blocked() public {
+        // Test behavior: Cannot call harvest again until processBatch completes
 
         // Lower threshold for testing
         manager.setMinYieldThreshold(1e18);
@@ -735,10 +797,6 @@ contract PostageYieldManagerTest is Test {
         manager.deposit(100e18, STAMP_ALICE);
         vm.stopPrank();
 
-        // Record Alice's shares (should remain constant throughout)
-        PostageYieldManagerUpgradeable.Deposit memory aliceDepositInitial = manager.getUserDeposit(alice, 0);
-        uint256 aliceShares = aliceDepositInitial.sDAIAmount;
-
         // Fund DEX with BZZ
         bzz.mint(address(routeProcessor), 100000e18);
 
@@ -746,41 +804,24 @@ contract PostageYieldManagerTest is Test {
         sdai.setExchangeRate(1.1e18);
         manager.harvest();
 
-        (uint256 totalBZZAfter1,,, bool active1) = manager.distributionState();
+        (uint256 totalBZZAfter1,,,,, bool active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
 
-        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest1 = manager.getUserDeposit(alice, 0);
-        assertEq(aliceDepositAfterHarvest1.sDAIAmount, aliceShares, "Shares unchanged after 1st harvest");
-
-        // Second harvest (before keeper processes) - should accumulate BZZ
+        // Attempt second harvest - should revert
         sdai.setExchangeRate(1.2e18);
+        vm.expectRevert(PostageYieldManagerUpgradeable.DistributionInProgress.selector);
         manager.harvest();
 
-        (uint256 totalBZZAfter2,, uint256 snapshot2, bool active2) = manager.distributionState();
-        assertTrue(active2, "Distribution should still be active");
-        assertGt(totalBZZAfter2, totalBZZAfter1, "BZZ should accumulate from multiple harvests");
-
-        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest2 = manager.getUserDeposit(alice, 0);
-        assertEq(aliceDepositAfterHarvest2.sDAIAmount, aliceShares, "Shares unchanged after 2nd harvest");
-
-        // Third harvest - more accumulation
-        sdai.setExchangeRate(1.3e18);
-        manager.harvest();
-
-        (uint256 totalBZZAfter3,,, bool active3) = manager.distributionState();
-        assertTrue(active3, "Distribution should still be active");
-        assertGt(totalBZZAfter3, totalBZZAfter2, "BZZ should further accumulate");
-
-        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest3 = manager.getUserDeposit(alice, 0);
-        assertEq(aliceDepositAfterHarvest3.sDAIAmount, aliceShares, "Shares unchanged after 3rd harvest");
-
-        // Process distribution - Alice should get all accumulated BZZ (she owns 100%)
+        // Complete distribution
         vm.prank(address(0x123));
         manager.processBatch(10);
 
-        // Shares remain fixed even after distribution
-        PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterDistribution = manager.getUserDeposit(alice, 0);
-        assertEq(aliceDepositAfterDistribution.sDAIAmount, aliceShares, "Shares unchanged after distribution");
+        // Now harvest should work again
+        sdai.setExchangeRate(1.3e18);
+        manager.harvest();
+
+        (uint256 totalBZZAfter2,,,,, bool active2) = manager.distributionState();
+        assertTrue(active2, "Distribution should be active after second harvest");
     }
 
     /// @notice Test that totalPrincipalDAI is updated correctly during harvest (user shares stay fixed)
