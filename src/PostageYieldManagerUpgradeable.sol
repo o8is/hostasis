@@ -9,7 +9,6 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {ISavingsDai} from "./interfaces/ISavingsDai.sol";
 import {IPostageStamp} from "./interfaces/IPostageStamp.sol";
 import {IRouteProcessor2} from "./interfaces/IRouteProcessor2.sol";
-import {IUniswapV3Pool} from "./interfaces/IUniswapV3Pool.sol";
 
 /// @title PostageYieldManagerUpgradeable
 /// @notice Manages sDAI deposits and redirects yield to Swarm postage stamps (Upgradeable)
