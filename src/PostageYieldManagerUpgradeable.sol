@@ -16,11 +16,7 @@ import {IUniswapV3Pool} from "./interfaces/IUniswapV3Pool.sol";
 /// @dev Uses shares-based accounting: user sDAIAmount values are fixed shares, only global totalSDAI changes
 /// @dev Tracks principal in DAI terms to prevent yield theft between depositors
 /// @dev Uses Transparent Proxy pattern - upgrade logic handled by ProxyAdmin
-contract PostageYieldManagerUpgradeable is
-    Initializable,
-    OwnableUpgradeable,
-    ReentrancyGuardTransient
-{
+contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////
@@ -618,10 +614,10 @@ contract PostageYieldManagerUpgradeable is
     function _swapDAIForBZZ(uint256 daiAmount) internal returns (uint256 bzzAmount) {
         // Build hard-coded route for wxDAI -> BZZ through SushiSwap V3 pool
         bytes memory route = abi.encodePacked(
-            uint8(3),              // Command code 3 = UniswapV3 swap
-            bzzWxdaiPool,          // Pool address
-            address(DAI),          // Token in (wxDAI)
-            address(BZZ)           // Token out (BZZ)
+            uint8(3), // Command code 3 = UniswapV3 swap
+            bzzWxdaiPool, // Pool address
+            address(DAI), // Token in (wxDAI)
+            address(BZZ) // Token out (BZZ)
         );
 
         // Calculate minimum output with simple protection
@@ -635,12 +631,12 @@ contract PostageYieldManagerUpgradeable is
 
         // Execute swap through RouteProcessor2
         bzzAmount = routeProcessor.processRoute(
-            address(DAI),          // tokenIn
-            daiAmount,             // amountIn
-            address(BZZ),          // tokenOut
-            minBZZ,                // amountOutMin (slippage protection based on pool price)
-            address(this),         // recipient
-            route                  // encoded route
+            address(DAI), // tokenIn
+            daiAmount, // amountIn
+            address(BZZ), // tokenOut
+            minBZZ, // amountOutMin (slippage protection based on pool price)
+            address(this), // recipient
+            route // encoded route
         );
 
         // Sanity check
