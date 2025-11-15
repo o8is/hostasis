@@ -14,7 +14,10 @@ contract DeployUpgradeable is Script {
     address constant DAI = address(0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d); // wxDAI (Wrapped xDAI - ERC-20)
     address constant BZZ = address(0xdBF3Ea6F5beE45c02255B2c26a16F300502F68da); // BZZ token (16 decimals)
     address constant POSTAGE_STAMP = address(0x45a1502382541Cd610CC9068e88727426b696293); // Swarm PostageStamp contract
-    address constant DEX_ROUTER = address(0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0); // Swapr (DXswap) Router
+    // SushiSwap RouteProcessor2 on Gnosis
+    address constant ROUTE_PROCESSOR2 = address(0x145d82bCa93cCa2AE057D1c6f26245d1b9522E6F);
+    // BZZ/WXDAI SushiSwap V3 Pool (0.3% fee)
+    address constant BZZ_WXDAI_POOL = address(0x7583b9C573FA4FB5Ea21C83454939c4Cf6aacBc3);
 
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -30,7 +33,10 @@ contract DeployUpgradeable is Script {
         address proxy = Upgrades.deployTransparentProxy(
             "PostageYieldManagerUpgradeable.sol:PostageYieldManagerUpgradeable",
             deployer, // Initial owner and proxy admin owner
-            abi.encodeCall(PostageYieldManagerUpgradeable.initialize, (SDAI, DAI, BZZ, POSTAGE_STAMP, DEX_ROUTER))
+            abi.encodeCall(
+                PostageYieldManagerUpgradeable.initialize,
+                (SDAI, DAI, BZZ, POSTAGE_STAMP, ROUTE_PROCESSOR2, BZZ_WXDAI_POOL)
+            )
         );
 
         vm.stopBroadcast();

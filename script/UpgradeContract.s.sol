@@ -23,12 +23,12 @@ contract UpgradeContract is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Configure upgrade options
-        // Skip storage layout check because we don't have the original build artifacts
-        // This is safe because we manually verified we only added a new function
         Options memory opts;
-        opts.unsafeSkipStorageCheck = true;
+        // Uncomment if you need to skip storage checks (not recommended for production)
+        // opts.unsafeSkipStorageCheck = true;
 
         // Perform the upgrade
+        // The ProxyAdmin (deployed with the proxy) will authorize this upgrade
         Upgrades.upgradeProxy(proxy, "PostageYieldManagerUpgradeable.sol:PostageYieldManagerUpgradeable", "", opts);
 
         vm.stopBroadcast();
@@ -38,8 +38,7 @@ contract UpgradeContract is Script {
         console.log("Proxy Address (unchanged):", proxy);
         console.log("===========================================");
         console.log("");
-        console.log("WARNING: Storage layout check was skipped.");
-        console.log("This upgrade added the depositWithPermit() function.");
-        console.log("No storage variables were modified.");
+        console.log("The proxy now points to the new implementation.");
+        console.log("All state has been preserved.");
     }
 }

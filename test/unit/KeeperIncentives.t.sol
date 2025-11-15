@@ -8,6 +8,8 @@ import {MockSavingsDai} from "../mocks/MockSavingsDai.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockPostageStamp} from "../mocks/MockPostageStamp.sol";
 import {MockDexRouter} from "../mocks/MockDexRouter.sol";
+import {MockRouteProcessor2} from "../mocks/MockRouteProcessor2.sol";
+import {MockUniswapV3Pool} from "../mocks/MockUniswapV3Pool.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
 contract KeeperIncentivesTest is Test {
@@ -17,6 +19,8 @@ contract KeeperIncentivesTest is Test {
     MockERC20 public bzz;
     MockPostageStamp public postageStamp;
     MockDexRouter public dexRouter;
+    MockRouteProcessor2 public routeProcessor;
+    MockUniswapV3Pool public mockPool;
 
     address public alice = address(0x1);
     address public bob = address(0x2);
@@ -41,10 +45,20 @@ contract KeeperIncentivesTest is Test {
     function setUp() public {
         // Deploy mocks
         dai = new MockERC20("DAI", "DAI", 18);
-        bzz = new MockERC20("BZZ", "BZZ", 18);
+        bzz = new MockERC20("BZZ", "BZZ", 18); // Use 18 decimals in tests for simplicity
         sdai = new MockSavingsDai(address(dai), INITIAL_RATE);
         postageStamp = new MockPostageStamp();
         dexRouter = new MockDexRouter(address(dai), address(bzz));
+        routeProcessor = new MockRouteProcessor2();
+
+        // Create mock pool with price that matches 1 DAI = 2 BZZ exchange rate
+        mockPool = new MockUniswapV3Pool(address(bzz), address(dai), 56022498816034085568);
+
+        // Set exchange rate to match MockDexRouter (1 DAI = 2 BZZ)
+        routeProcessor.setExchangeRate(2e18);
+
+        // Fund the RouteProcessor with BZZ for swaps
+        bzz.mint(address(routeProcessor), 1000000e18);
 
         // Deploy implementation
         address implementation = address(new PostageYieldManagerUpgradeable());
@@ -55,7 +69,14 @@ contract KeeperIncentivesTest is Test {
             admin,
             abi.encodeCall(
                 PostageYieldManagerUpgradeable.initialize,
-                (address(sdai), address(dai), address(bzz), address(postageStamp), address(dexRouter))
+                (
+                    address(sdai),
+                    address(dai),
+                    address(bzz),
+                    address(postageStamp),
+                    address(routeProcessor),
+                    address(mockPool)
+                )
             )
         );
         manager = PostageYieldManagerUpgradeable(proxy);
