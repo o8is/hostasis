@@ -8,7 +8,6 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {ISavingsDai} from "./interfaces/ISavingsDai.sol";
 import {IPostageStamp} from "./interfaces/IPostageStamp.sol";
-import {IRouteProcessor2} from "./interfaces/IRouteProcessor2.sol";
 import {IUniswapV3Pool} from "./interfaces/IUniswapV3Pool.sol";
 
 /// @title PostageYieldManagerUpgradeable
@@ -82,8 +81,9 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     IPostageStamp public POSTAGE_STAMP;
 
-    /// @notice SushiSwap RouteProcessor2 for swapping DAI -> BZZ
-    IRouteProcessor2 public routeProcessor;
+    /// @notice DEPRECATED - kept for storage layout compatibility
+    /// @dev Previously used for RouteProcessor2, now swaps directly via pool
+    address public __deprecated_routeProcessor;
 
     /// @notice BZZ/wxDAI pool address for route encoding
     address public bzzWxdaiPool;
@@ -91,8 +91,9 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @notice Minimum yield threshold before harvest (in DAI)
     uint256 public minYieldThreshold;
 
-    /// @notice Maximum slippage tolerance in basis points (e.g., 100 = 1%)
-    uint256 public maxSlippageBps;
+    /// @notice DEPRECATED - slippage is now hardcoded at 1% in _swapDAIForBZZ
+    /// @dev Kept for storage layout compatibility
+    uint256 public __deprecated_maxSlippageBps;
 
     /// @notice Struct representing a user's deposit
     struct Deposit {
@@ -161,14 +162,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         address _dai,
         address _bzz,
         address _postageStamp,
-        address _routeProcessor,
+        address, /* _routeProcessor - DEPRECATED, not used */
         address _bzzWxdaiPool
     ) public initializer {
         if (_sdai == address(0)) revert ZeroAddress();
         if (_dai == address(0)) revert ZeroAddress();
         if (_bzz == address(0)) revert ZeroAddress();
         if (_postageStamp == address(0)) revert ZeroAddress();
-        if (_routeProcessor == address(0)) revert ZeroAddress();
         if (_bzzWxdaiPool == address(0)) revert ZeroAddress();
 
         __Ownable_init(msg.sender);
@@ -178,10 +178,8 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         DAI = IERC20(_dai);
         BZZ = IERC20(_bzz);
         POSTAGE_STAMP = IPostageStamp(_postageStamp);
-        routeProcessor = IRouteProcessor2(_routeProcessor);
         bzzWxdaiPool = _bzzWxdaiPool;
         minYieldThreshold = 0.01 ether; // 0.01 DAI minimum
-        maxSlippageBps = 500; // 5% max slippage
         harvesterFeeBps = 50; // 0.5% harvester fee
         keeperFeeBps = 100; // 1% keeper fee
         lastHarvestTime = block.timestamp;
@@ -732,25 +730,11 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                         ADMIN FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Update V3 Swap Router
-    /// @param _newRouter New RouteProcessor2 address
-    function setRouteProcessor(address _newRouter) external onlyOwner {
-        if (_newRouter == address(0)) revert ZeroAddress();
-        routeProcessor = IRouteProcessor2(_newRouter);
-    }
-
     /// @notice Update BZZ/WXDAI pool address
     /// @param _newPool New pool address
     function setBzzWxdaiPool(address _newPool) external onlyOwner {
         if (_newPool == address(0)) revert ZeroAddress();
         bzzWxdaiPool = _newPool;
-    }
-
-    /// @notice Update maximum slippage tolerance
-    /// @param _slippageBps New slippage in basis points (e.g., 500 = 5%)
-    function setMaxSlippageBps(uint256 _slippageBps) external onlyOwner {
-        require(_slippageBps <= 1000, "Slippage too high"); // Max 10%
-        maxSlippageBps = _slippageBps;
     }
 
     /// @notice Update minimum yield threshold

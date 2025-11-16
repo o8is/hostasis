@@ -6,7 +6,6 @@ import {PostageYieldManagerUpgradeable} from "../../src/PostageYieldManagerUpgra
 import {MockSavingsDai} from "../mocks/MockSavingsDai.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
 import {MockPostageStamp} from "../mocks/MockPostageStamp.sol";
-import {MockRouteProcessor2} from "../mocks/MockRouteProcessor2.sol";
 import {MockUniswapV3Pool} from "../mocks/MockUniswapV3Pool.sol";
 import {UnsafeUpgrades} from "openzeppelin-foundry-upgrades/Upgrades.sol";
 
@@ -16,7 +15,6 @@ contract PostageYieldManagerTest is Test {
     MockERC20 public dai;
     MockERC20 public bzz;
     MockPostageStamp public postageStamp;
-    MockRouteProcessor2 public routeProcessor;
     MockUniswapV3Pool public mockPool;
 
     address public alice = address(0x1);
@@ -37,7 +35,6 @@ contract PostageYieldManagerTest is Test {
         bzz = new MockERC20("BZZ", "BZZ", 18); // Use 18 decimals in tests for simplicity
         sdai = new MockSavingsDai(address(dai), INITIAL_RATE);
         postageStamp = new MockPostageStamp();
-        routeProcessor = new MockRouteProcessor2();
 
         // Create mock pool with price that matches 1 DAI = 2 BZZ exchange rate
         // For BZZ (token0) and DAI (token1), if 1 DAI = 2 BZZ, then DAI/BZZ = 0.5
@@ -46,11 +43,11 @@ contract PostageYieldManagerTest is Test {
         // 0.7071 * 2^96 ≈ 56022498816 * 10^18
         mockPool = new MockUniswapV3Pool(address(bzz), address(dai), 56022498816034085568);
 
-        // Set exchange rate to match MockDexRouter (1 DAI = 2 BZZ)
-        routeProcessor.setExchangeRate(2e18);
+        // Set exchange rate (1 DAI = 2 BZZ)
+        mockPool.setMockRate(2e18);
 
-        // Fund the RouteProcessor with BZZ for swaps
-        bzz.mint(address(routeProcessor), 1000000e18);
+        // Fund the Pool with BZZ for direct swaps
+        bzz.mint(address(mockPool), 1000000e18);
 
         // Deploy implementation
         address implementation = address(new PostageYieldManagerUpgradeable());
@@ -66,7 +63,7 @@ contract PostageYieldManagerTest is Test {
                     address(dai),
                     address(bzz),
                     address(postageStamp),
-                    address(routeProcessor),
+                    address(1), // routeProcessor (deprecated, not used)
                     address(mockPool)
                 )
             )
@@ -741,7 +738,7 @@ contract PostageYieldManagerTest is Test {
         assertEq(totalYield, 30e18, "Total yield should be 30 DAI");
 
         // Fund DEX with BZZ for swap
-        bzz.mint(address(routeProcessor), 10000e18);
+        bzz.mint(address(mockPool), 10000e18);
 
         // Harvest yield
         manager.harvest();
@@ -798,7 +795,7 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
 
         // Fund DEX with BZZ
-        bzz.mint(address(routeProcessor), 100000e18);
+        bzz.mint(address(mockPool), 100000e18);
 
         // First harvest
         sdai.setExchangeRate(1.1e18);
@@ -849,7 +846,7 @@ contract PostageYieldManagerTest is Test {
 
         // Generate yield and harvest
         sdai.setExchangeRate(1.2e18);
-        bzz.mint(address(routeProcessor), 10000e18);
+        bzz.mint(address(mockPool), 10000e18);
         manager.harvest();
 
         // Global totalPrincipalDAI should be recalculated (approximately matches original after yield removal)
