@@ -1,0 +1,29 @@
+{
+  "name": "hostasis-keeper",
+  "version": "1.0.0",
+  "description": "Automated keeper bot for Hostasis yield harvesting and distribution",
+  "main": "src/keeper.js",
+  "scripts": {
+    "start": "node src/cli.js start",
+    "status": "node src/cli.js status",
+    "harvest": "node src/cli.js harvest",
+    "process": "node src/cli.js process",
+    "once": "node src/cli.js once",
+    "help": "node src/cli.js help"
+  },
+  "keywords": [
+    "keeper",
+    "ethereum",
+    "gnosis",
+    "defi",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.9.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

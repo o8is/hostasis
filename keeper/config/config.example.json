@@ -1,0 +1,22 @@
+{
+  "rpcUrl": "https://rpc.gnosischain.com",
+  "managerAddress": "0x0000000000000000000000000000000000000000",
+  "privateKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "harvestCheckInterval": 300000,
+  "batchCheckInterval": 60000,
+  "batchSize": 20,
+  "harvestGasEstimate": 370000,
+  "batchGasEstimate": 1135000,
+  "minProfitMarginPercent": 20,
+  "_comments": {
+    "rpcUrl": "Gnosis Chain RPC endpoint",
+    "managerAddress": "Address of deployed PostageYieldManager contract",
+    "privateKey": "Private key of keeper wallet (needs xDAI for gas)",
+    "harvestCheckInterval": "How often to check for harvest opportunities (ms)",
+    "batchCheckInterval": "How often to check for batch processing opportunities (ms)",
+    "batchSize": "Number of users to process per batch",
+    "harvestGasEstimate": "Estimated gas for harvest operation",
+    "batchGasEstimate": "Estimated gas for batch processing",
+    "minProfitMarginPercent": "Minimum profit margin above gas costs (percent)"
+  }
+}
