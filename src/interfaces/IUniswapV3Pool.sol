@@ -32,4 +32,20 @@ interface IUniswapV3Pool {
     /// @notice The second of the two tokens of the pool, sorted by address
     /// @return The token contract address
     function token1() external view returns (address);
+
+    /// @notice Swap token0 for token1, or token1 for token0
+    /// @param recipient The address to receive the output of the swap
+    /// @param zeroForOne The direction of the swap, true for token0 to token1, false for token1 to token0
+    /// @param amountSpecified The amount of the swap, positive for exactInput, negative for exactOutput
+    /// @param sqrtPriceLimitX96 The Q64.96 sqrt price limit
+    /// @param data Any data to be passed through to the callback
+    /// @return amount0 The delta of the balance of token0 of the pool
+    /// @return amount1 The delta of the balance of token1 of the pool
+    function swap(
+        address recipient,
+        bool zeroForOne,
+        int256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
+        bytes calldata data
+    ) external returns (int256 amount0, int256 amount1);
 }

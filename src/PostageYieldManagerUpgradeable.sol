@@ -9,6 +9,7 @@ import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/Reentrancy
 import {ISavingsDai} from "./interfaces/ISavingsDai.sol";
 import {IPostageStamp} from "./interfaces/IPostageStamp.sol";
 import {IRouteProcessor2} from "./interfaces/IRouteProcessor2.sol";
+import {IUniswapV3Pool} from "./interfaces/IUniswapV3Pool.sol";
 
 /// @title PostageYieldManagerUpgradeable
 /// @notice Manages sDAI deposits and redirects yield to Swarm postage stamps (Upgradeable)
@@ -632,39 +633,62 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                         INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Swap DAI for BZZ using SushiSwap RouteProcessor2
+    /// @notice Swap DAI for BZZ using direct UniswapV3 pool swap
     /// @param daiAmount Amount of DAI to swap
     /// @return bzzAmount Amount of BZZ received
     function _swapDAIForBZZ(uint256 daiAmount) internal returns (uint256 bzzAmount) {
-        // Build hard-coded route for wxDAI -> BZZ through SushiSwap V3 pool
-        bytes memory route = abi.encodePacked(
-            uint8(3), // Command code 3 = UniswapV3 swap
-            bzzWxdaiPool, // Pool address
-            address(DAI), // Token in (wxDAI)
-            address(BZZ) // Token out (BZZ)
+        // Pool: token0 = BZZ (0xdBF3...), token1 = WXDAI (0xe91D...)
+        // We want WXDAI -> BZZ, which is token1 -> token0, so zeroForOne = false
+        IUniswapV3Pool pool = IUniswapV3Pool(bzzWxdaiPool);
+
+        // Store BZZ balance before swap
+        uint256 bzzBefore = BZZ.balanceOf(address(this));
+
+        // sqrtPriceLimitX96 for token1 -> token0 swap (price going up)
+        // Use max price limit (we rely on slippage check instead)
+        uint160 sqrtPriceLimitX96 = 1461446703485210103287273052203988822378723970341;
+
+        // Execute swap - pool will call uniswapV3SwapCallback
+        // amountSpecified > 0 means exactInput (we specify how much DAI to swap)
+        pool.swap(
+            address(this), // recipient
+            false, // zeroForOne = false (token1 -> token0, i.e., WXDAI -> BZZ)
+            int256(daiAmount), // amountSpecified (positive = exact input)
+            sqrtPriceLimitX96, // price limit
+            abi.encode(daiAmount) // callback data
         );
 
-        // Calculate minimum output with simple protection
-        // Since we read directly from the pool, we just need basic sanity check
-        // Set minBZZ to 1% of input to prevent complete failure (99% protection against total loss)
+        // Calculate actual BZZ received
+        bzzAmount = BZZ.balanceOf(address(this)) - bzzBefore;
+
+        // Slippage protection: ensure we got at least 1% of input value
         // This is very conservative - actual swap should give much more based on pool price
         uint256 minBZZ = daiAmount / 100;
-
-        // Approve RouteProcessor to spend DAI
-        DAI.safeIncreaseAllowance(address(routeProcessor), daiAmount);
-
-        // Execute swap through RouteProcessor2
-        bzzAmount = routeProcessor.processRoute(
-            address(DAI), // tokenIn
-            daiAmount, // amountIn
-            address(BZZ), // tokenOut
-            minBZZ, // amountOutMin (slippage protection based on pool price)
-            address(this), // recipient
-            route // encoded route
-        );
-
-        // Sanity check
         if (bzzAmount < minBZZ) revert SlippageTooHigh();
+    }
+
+    /// @notice UniswapV3 swap callback - called by pool to receive payment
+    /// @param amount0Delta The amount of token0 that was sent (negative) or must be received (positive)
+    /// @param amount1Delta The amount of token1 that was sent (negative) or must be received (positive)
+    /// @param data Callback data containing expected DAI amount
+    function uniswapV3SwapCallback(int256 amount0Delta, int256 amount1Delta, bytes calldata data) external {
+        // Verify caller is the pool
+        if (msg.sender != bzzWxdaiPool) revert ZeroAddress();
+
+        // We're swapping token1 (WXDAI) for token0 (BZZ)
+        // amount1Delta should be positive (we owe WXDAI to the pool)
+        if (amount1Delta <= 0) revert ZeroAmount();
+
+        // Decode expected amount for safety check
+        uint256 expectedAmount = abi.decode(data, (uint256));
+
+        // Pay the pool
+        uint256 amountToPay = uint256(amount1Delta);
+
+        // Safety check: don't pay more than expected
+        if (amountToPay > expectedAmount) revert SlippageTooHigh();
+
+        DAI.safeTransfer(msg.sender, amountToPay);
     }
 
     /// @notice Add user to active users list

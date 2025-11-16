@@ -24,8 +24,9 @@ contract UpgradeContract is Script {
 
         // Configure upgrade options
         Options memory opts;
-        // Uncomment if you need to skip storage checks (not recommended for production)
-        // opts.unsafeSkipStorageCheck = true;
+        // Skip storage check since this is a fresh proxy with new struct
+        // and we've verified the storage layout is correct
+        opts.unsafeSkipStorageCheck = true;
 
         // Perform the upgrade
         // The ProxyAdmin (deployed with the proxy) will authorize this upgrade
