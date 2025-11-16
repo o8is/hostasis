@@ -9,18 +9,18 @@ interface InfoCard {
 const infoCards: InfoCard[] = [
   {
     step: "1",
-    title: "Deposit",
-    description: "Deposit DAI which gets put into the Spark Savings vault"
+    title: "Reserve",
+    description: "Create a reserve with DAI (and soon ETH, USDC, or fiat) in a yield vault."
   },
   {
     step: "2",
     title: "Earn",
-    description: "Your deposit generates yield automatically"
+    description: "Your reserve earns yield automatically — your funds never leave the vault."
   },
   {
     step: "3",
-    title: "Auto-fund",
-    description: "Yield is harvested and used to keep your Swarm files active"
+    title: "Auto-Fund",
+    description: "Hostasis harvests that yield and converts it into Swarm postage to keep your files alive forever."
   }
 ];
 

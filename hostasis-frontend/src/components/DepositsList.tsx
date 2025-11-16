@@ -39,11 +39,11 @@ export default function DepositsList() {
     <>
       <div style={{ marginTop: '2rem' }}>
         <div className="separator" />
-        <h3 style={{ textAlign: 'center', marginTop: '2rem' }}>Your Deposits</h3>
+        <h3 style={{ textAlign: 'center', marginTop: '2rem' }}>Your Reserves</h3>
 
         {count === 0 ? (
           <p className="description" style={{ textAlign: 'center', marginTop: '1rem' }}>
-            No deposits yet. Create your first deposit above!
+            No reserves yet. Create your first reserve above!
           </p>
         ) : (
           <div className="deposits-grid">
@@ -153,7 +153,7 @@ function DepositCard({
   return (
     <div className="info-box deposit-card">
       <h4 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>Deposit #{depositIndex}</span>
+        <span>Reserve #{depositIndex}</span>
         <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#7a7a7a' }}>
           {depositDate.toLocaleDateString()}
         </span>
@@ -161,7 +161,7 @@ function DepositCard({
 
       <div style={{ fontSize: '0.9rem', lineHeight: '1.8' }}>
         <p>
-          <strong>Deposited:</strong> <TokenAmount value={depositData.principalDAI} symbol="DAI" />
+          <strong>Reserved:</strong> <TokenAmount value={depositData.principalDAI} symbol="DAI" />
         </p>
         <p style={{ wordBreak: 'break-all' }}>
           <strong>Batch ID:</strong> {depositData.stampId}

@@ -57,23 +57,23 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       const token = conversion.currentToken;
 
       if (!token) {
-        setError('You need xDAI, wxDAI, or sDAI to create a deposit');
+        setError('You need xDAI, wxDAI, or sDAI to create a reserve');
         return;
       }
 
       if (token === 'SDAI') {
-        // Direct deposit
-        setDepositStep('Depositing sDAI...');
+        // Direct reserve
+        setDepositStep('Creating reserve...');
         await depositWithPermit(amountBigInt, normalizedId as Hex);
       } else {
-        // Convert then deposit
+        // Convert then reserve
         await conversion.convertToSDAI(amountBigInt, token, async (sdaiAmount) => {
-          setDepositStep('Depositing sDAI...');
+          setDepositStep('Creating reserve...');
           await depositWithPermit(sdaiAmount, normalizedId as Hex);
         });
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to deposit');
+      setError(err.message || 'Failed to create reserve');
       setDepositStep('');
     }
   };
@@ -126,13 +126,13 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
     if (isLoading) return 'Processing...';
 
     if (strategy === 'USE_SDAI') {
-      return 'Deposit sDAI';
+      return 'Create Reserve';
     } else if (strategy === 'CONVERT_DAI') {
-      return 'Convert wxDAI → sDAI & Deposit';
+      return 'Convert wxDAI → sDAI & Reserve';
     } else if (strategy === 'WRAP_XDAI') {
-      return 'Wrap xDAI → wxDAI → sDAI & Deposit';
+      return 'Wrap xDAI → wxDAI → sDAI & Reserve';
     } else {
-      return 'Deposit';
+      return 'Create Reserve';
     }
   };
 
@@ -153,7 +153,7 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
 
   return (
     <div className="info-box" style={{ marginTop: '2rem' }}>
-      <h3 style={{ marginTop: 0 }}>Create Deposit</h3>
+      <h3 style={{ marginTop: 0 }}>Create Reserve</h3>
 
       {strategy === 'USE_SDAI' && balanceInfo.hasBalance ? (
         <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
@@ -178,14 +178,14 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
             xDAI Balance: <TokenAmount value={balanceInfo.balance as bigint} />
           </p>
           <p style={{ margin: '0.25rem 0', fontSize: '0.85rem', opacity: 0.8 }}>
-            We&apos;ll wrap to wxDAI, convert to sDAI, then deposit
+            We&apos;ll wrap to wxDAI, convert to sDAI, then create your reserve
           </p>
         </div>
       ) : null}
       {strategy === 'NEED_TOKENS' ? (
         <div className="description" style={{ fontSize: '0.9rem', marginBottom: '1rem' }}>
           <p style={{ margin: '0.25rem 0', color: '#ff6b6b' }}>
-            You need xDAI, wxDAI, or sDAI to create a deposit.{' '}
+            You need xDAI, wxDAI, or sDAI to create a reserve.{' '}
             <a
               href="https://bridge.gnosischain.com"
               target="_blank"
@@ -225,7 +225,7 @@ export default function DepositForm({ onDepositSuccess }: { onDepositSuccess?: (
       )}
 
       {isDeposited && (
-        <p className="success-message">Deposit successful!</p>
+        <p className="success-message">Reserve created successfully!</p>
       )}
 
       {currentStep && (
