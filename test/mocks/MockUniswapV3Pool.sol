@@ -41,7 +41,11 @@ contract MockUniswapV3Pool is IUniswapV3Pool {
         int256 amountSpecified,
         uint160, /* sqrtPriceLimitX96 */
         bytes calldata data
-    ) external override returns (int256 amount0Delta, int256 amount1Delta) {
+    )
+        external
+        override
+        returns (int256 amount0Delta, int256 amount1Delta)
+    {
         // For simplicity, we only handle exact input swaps (amountSpecified > 0)
         require(amountSpecified > 0, "Only exact input supported");
 
