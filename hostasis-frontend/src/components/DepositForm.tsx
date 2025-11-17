@@ -4,7 +4,7 @@ import { useTokenConversion } from '../hooks/useTokenConversion';
 import { useDepositWithPermit } from '../hooks/usePostageManager';
 import TokenAmount from './TokenAmount';
 import TokenSelector from './TokenSelector';
-import { getMaxAmountString } from '../utils/maxAmount';
+import { getMaxAmountInfo } from '../utils/maxAmount';
 
 interface DepositFormProps {
   onDepositSuccess?: () => void;
@@ -70,7 +70,13 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
 
   const balance = getBalance();
   const tokenLabel = getTokenLabel();
-  const maxAmount = getMaxAmountString(balance);
+  const maxAmountInfo = getMaxAmountInfo(
+    conversion.currentToken,
+    conversion.nativeBalance,
+    conversion.daiBalance as bigint | undefined,
+    conversion.sdaiBalance as bigint | undefined
+  );
+  const maxAmount = maxAmountInfo.maxAmountString;
 
   const handleDeposit = async () => {
     try {

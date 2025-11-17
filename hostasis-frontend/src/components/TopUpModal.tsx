@@ -7,7 +7,7 @@ import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import TokenAmount from './TokenAmount';
 import TokenSelector from './TokenSelector';
-import { getMaxAmountString } from '../utils/maxAmount';
+import { getMaxAmountInfo } from '../utils/maxAmount';
 import Modal from './Modal';
 
 type Deposit = {
@@ -68,7 +68,13 @@ export default function TopUpModal({
 
   const balance = getBalance();
   const tokenLabel = getTokenLabel();
-  const maxAmount = getMaxAmountString(balance);
+  const maxAmountInfo = getMaxAmountInfo(
+    conversion.currentToken,
+    conversion.nativeBalance,
+    conversion.daiBalance as bigint | undefined,
+    conversion.sdaiBalance as bigint | undefined
+  );
+  const maxAmount = maxAmountInfo.maxAmountString;
 
   const handleTopUp = async () => {
     try {

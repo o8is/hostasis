@@ -35,8 +35,17 @@ export function getMaxAmountInfo(
     balance = daiBalance || 0n;
     label = 'wxDAI';
   } else if (tokenType === 'NATIVE_XDAI') {
+    // Reserve 0.10 xDAI for gas
+    const GAS_RESERVE = 0.10;
+    const DECIMALS = 18n;
+    const GAS_RESERVE_WEI = BigInt(Math.floor(GAS_RESERVE * Math.pow(10, Number(DECIMALS))));
     balance = nativeBalance || 0n;
     label = 'xDAI';
+    if (balance > GAS_RESERVE_WEI) {
+      balance = balance - GAS_RESERVE_WEI;
+    } else {
+      balance = 0n;
+    }
   }
 
   return {

@@ -203,9 +203,6 @@ const StorageCalculator: React.FC = () => {
                   <h4>Safety Buffer</h4>
                   <div className="safety-buffer-highlight">
                     <div className="buffer-multiplier">{bufferFactors.combinedBuffer.toFixed(1)}x</div>
-                    <div className="buffer-description">
-                      Your reserve includes protection against:
-                    </div>
                   </div>
                   <ul className="buffer-protections">
                     <li>BZZ price increases up to 5x</li>
