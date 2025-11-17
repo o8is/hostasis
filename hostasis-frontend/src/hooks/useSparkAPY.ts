@@ -1,70 +1,156 @@
-import { useReadContract } from 'wagmi';
-import { parseEther, formatUnits } from 'viem';
-import { SDAI_ADDRESS } from '../contracts/addresses';
-import sDAI_ABI from '../contracts/abis/ISavingsDai.json';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
+
+// Cache for Enso API responses (module-level singleton)
+interface EnsoCache {
+  data: EnsoTokenResponse | null;
+  timestamp: number;
+  promise: Promise<EnsoTokenResponse> | null;
+}
+
+interface EnsoTokenResponse {
+  address: string;
+  chainId: number;
+  name: string;
+  symbol: string;
+  decimals: number;
+  apy?: number;
+  apyBase?: number | null;
+  apyReward?: number | null;
+  tvl?: number;
+}
+
+const ensoCache: EnsoCache = {
+  data: null,
+  timestamp: 0,
+  promise: null,
+};
+
+// Cache duration: 5 minutes (much longer than 1 req/sec limit)
+const CACHE_DURATION_MS = 5 * 60 * 1000;
+
+// sDAI address on Gnosis
+const SDAI_ADDRESS_GNOSIS = '0xaf204776c7245bf4147c2612bf6e5972ee483701';
+
+async function fetchEnsoTokenData(): Promise<EnsoTokenResponse> {
+  // Check if we have cached data that's still valid
+  const now = Date.now();
+  if (ensoCache.data && now - ensoCache.timestamp < CACHE_DURATION_MS) {
+    return ensoCache.data;
+  }
+
+  // If there's already a request in flight, wait for it
+  if (ensoCache.promise) {
+    return ensoCache.promise;
+  }
+
+  // Create new request
+  ensoCache.promise = (async () => {
+    try {
+      const response = await fetch(
+        `https://api.enso.finance/api/v1/tokens?address=${SDAI_ADDRESS_GNOSIS}&chainId=100&includeMetadata=true`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Enso API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+  // API response has a 'data' array property
+  const tokenData = data?.data?.[0] ?? null;
+
+      // Update cache
+      ensoCache.data = tokenData;
+      ensoCache.timestamp = Date.now();
+      ensoCache.promise = null;
+
+      return tokenData;
+    } catch (error) {
+      ensoCache.promise = null;
+      throw error;
+    }
+  })();
+
+  return ensoCache.promise;
+}
 
 /**
- * Hook to fetch and calculate the current Sky Savings Rate (SSR / APY)
+ * Hook to fetch the current Sky Savings Rate (SSR / APY) from Enso API
  *
- * This hook fetches the sDAI exchange rate and calculates the APY.
+ * This hook fetches the sDAI APY directly from Enso's token metadata API.
  * sDAI (Savings Dai) is an ERC4626 vault from Sky (formerly MakerDAO) where 1 share
  * equals more DAI over time as yield accrues from the Dai Savings Rate (DSR).
  *
- * Note: While this data may be accessed through Spark interfaces, the actual
- * yield comes from Sky's non-custodial smart contracts. Spark does not control
- * the Sky Savings Rate or the sDAI token.
- *
- * The exchange rate represents how much DAI you get for 1 sDAI.
- * We compare the current rate to a baseline to estimate APY.
+ * The Enso API provides pre-calculated APY based on current protocol rates.
  */
 export function useSparkAPY() {
-  // Fetch current exchange rate: how much DAI you get for 1 sDAI
-  const { data: exchangeRate, isLoading, error, refetch } = useReadContract({
-    address: SDAI_ADDRESS,
-    abi: sDAI_ABI,
-    functionName: 'convertToAssets',
-    args: [parseEther('1')], // 1 sDAI share
-  });
+  const [data, setData] = useState<EnsoTokenResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const mountedRef = useRef(true);
 
-  // Calculate APY based on the exchange rate from Sky's sDAI contract
-  // Using the actual deployment date for accurate APY calculation
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const fetchData = async () => {
+      try {
+        setIsLoading(true);
+        const tokenData = await fetchEnsoTokenData();
+        if (mountedRef.current) {
+          setData(tokenData);
+          setError(null);
+        }
+      } catch (err) {
+        if (mountedRef.current) {
+          setError(err instanceof Error ? err : new Error('Failed to fetch APY'));
+        }
+      } finally {
+        if (mountedRef.current) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchData();
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const refetch = async () => {
+    // Clear cache to force refetch
+    ensoCache.data = null;
+    ensoCache.timestamp = 0;
+
+    try {
+      setIsLoading(true);
+      const tokenData = await fetchEnsoTokenData();
+      setData(tokenData);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to fetch APY'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Convert APY from percentage (5.43) to decimal (0.0543)
   const apy = useMemo(() => {
-    if (!exchangeRate) return null;
-
-    // sDAI deployment date on Gnosis Chain (contract: 0xaf204776c7245bf4147c2612bf6e5972ee483701)
-    // Deployed as part of Spark Protocol expansion: October 10, 2023
-    const SDAI_DEPLOYMENT_DATE = new Date('2023-10-10T00:00:00Z');
-    const currentDate = new Date();
-
-    // Calculate years elapsed since deployment
-    const millisecondsPerYear = 365.25 * 24 * 60 * 60 * 1000;
-    const yearsElapsed = (currentDate.getTime() - SDAI_DEPLOYMENT_DATE.getTime()) / millisecondsPerYear;
-
-    // Get current exchange rate (how much DAI you get for 1 sDAI)
-    const rate = parseFloat(formatUnits(exchangeRate as bigint, 18));
-
-    // sDAI starts at 1:1 ratio, so the rate above 1.0 represents total accrued value
-    // Calculate annualized APY: ((rate / 1.0)^(1/years) - 1)
-    const totalReturn = rate; // Current rate vs initial 1.0
-    const apy = Math.pow(totalReturn, 1 / yearsElapsed) - 1;
-
-    return apy;
-  }, [exchangeRate]);
+    if (!data?.apy) return null;
+    return data.apy / 100;
+  }, [data]);
 
   // Format for display
   const apyPercentage = useMemo(() => {
-    if (apy === null) return null;
-    return (apy * 100).toFixed(2); // e.g., "6.50"
-  }, [apy]);
-
-  // Format as decimal for calculations
-  const apyDecimal = apy;
+    if (!data?.apy) return null;
+    return data.apy.toFixed(2); // e.g., "5.43"
+  }, [data]);
 
   return {
-    apy: apyDecimal, // For calculations (e.g., 0.065)
-    apyPercentage, // For display (e.g., "6.50")
-    exchangeRate: exchangeRate as bigint | undefined,
+    apy, // For calculations (e.g., 0.0543)
+    apyPercentage, // For display (e.g., "5.43")
+    tvl: data?.tvl,
     isLoading,
     error,
     refetch,
@@ -75,17 +161,12 @@ export function useSparkAPY() {
  * Hook that returns a fallback APY if the real-time fetch fails
  * This ensures the calculator always has a reasonable value
  */
-export function useSparkAPYWithFallback(fallbackAPY: number = 0.065) {
-  const { apy, apyPercentage, isLoading, error } = useSparkAPY();
-
-  // TODO: The current APY calculation overestimates due to historical high rates
-  // We need an indexer to track rate changes over time for accurate calculation
-  // For now, disable and use fallback until indexer is ready
-  const disableRealTimeAPY = true;
+export function useSparkAPYWithFallback(fallbackAPY: number = 0.05) {
+  const { apy, apyPercentage, tvl, isLoading, error } = useSparkAPY();
 
   const effectiveAPY = useMemo(() => {
-    // Use fetched APY if available and not disabled, otherwise use fallback
-    return (apy !== null && !disableRealTimeAPY) ? apy : fallbackAPY;
+    // Use fetched APY if available, otherwise use fallback
+    return apy !== null ? apy : fallbackAPY;
   }, [apy, fallbackAPY]);
 
   const effectiveAPYPercentage = useMemo(() => {
@@ -95,7 +176,8 @@ export function useSparkAPYWithFallback(fallbackAPY: number = 0.065) {
   return {
     apy: effectiveAPY,
     apyPercentage: effectiveAPYPercentage,
-    isRealTimeData: apy !== null && !disableRealTimeAPY,
+    tvl,
+    isRealTimeData: apy !== null,
     isLoading,
     error,
   };
