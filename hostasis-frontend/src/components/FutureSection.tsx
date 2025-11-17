@@ -14,12 +14,12 @@ const FutureSection: React.FC = () => {
           <li>Cross-chain stablecoins</li>
           <li>Automatic on-ramps</li>
           <li>Alternative backends</li>
-          <li>Generalized "yield → resource" infrastructure</li>
+          <li>Generalized &ldquo;yield → resource&rdquo; infrastructure</li>
         </ul>
       </div>
 
       <p className="future-vision">
-        Long term, Hostasis becomes a universal yield-powered hosting engine for the decentralized web.
+        Long term, Hostasis becomes a universal decentralized hosting platform.
       </p>
     </div>
   );

@@ -37,13 +37,10 @@ export default function DepositsList() {
 
   return (
     <>
-      <div style={{ marginTop: '2rem' }}>
-        <div className="separator" />
-        <h3 style={{ textAlign: 'center', marginTop: '2rem' }}>Your Reserves</h3>
-
+      <div>
         {count === 0 ? (
           <p className="description" style={{ textAlign: 'center', marginTop: '1rem' }}>
-            No reserves yet. Create your first reserve above!
+            No reserves yet.
           </p>
         ) : (
           <div className="deposits-grid">

@@ -1,4 +1,5 @@
 /* Custom enhancements for Hostasis while maintaining O8 brand */
+/* Color system is imported from @o8is/brand/o8-brand.css */
 
 /* ===========================================
    NAVIGATION BAR
@@ -26,16 +27,10 @@
 }
 
 .nav-left,
-.nav-center,
 .nav-right {
   display: flex;
   align-items: center;
   gap: 1.5rem;
-}
-
-.nav-center {
-  flex: 1;
-  justify-content: center;
 }
 
 /* O8 Brand Link */
@@ -109,11 +104,95 @@
   background: linear-gradient(90deg, transparent 0%, #e0e0e0 50%, transparent 100%);
 }
 
+/* Navigation Menu */
+.nav-menu {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nav-menu-item {
+  color: #b0b0b0;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 400;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.nav-menu-item:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.nav-menu-item:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Mobile hamburger toggle */
+.nav-mobile-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  color: #b0b0b0;
+  padding: 0.5rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.nav-mobile-toggle:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Mobile dropdown menu */
+.nav-mobile-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(0, 0, 0, 0.95);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.5rem;
+}
+
+.nav-mobile-item {
+  display: flex;
+  align-items: center;
+  color: #b0b0b0;
+  text-decoration: none;
+  font-size: 0.95rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.nav-mobile-item:hover {
+  color: #e0e0e0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
 /* Mobile Responsive */
 @media (max-width: 768px) {
   .nav-content {
     padding: 0.75rem 1rem;
     gap: 1rem;
+    position: relative;
+  }
+
+  .nav-left {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .nav-right {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .nav-o8 {
@@ -124,8 +203,17 @@
     font-size: 0.9rem;
   }
 
-  .nav-center {
-    display: none; /* Hide center links on mobile */
+  .nav-menu {
+    display: none; /* Hide desktop menu on mobile */
+  }
+
+  .nav-mobile-toggle {
+    display: block; /* Show hamburger on mobile */
+    order: -1; /* Move hamburger to the left */
+  }
+
+  .nav-mobile-menu {
+    display: block; /* Enable mobile menu dropdown */
   }
 
   .nav-links {
@@ -219,6 +307,44 @@ h4 {
 .view-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Primary Button - Blue action button */
+.view-button--primary {
+  background: var(--o8-primary) !important;
+  border-color: var(--o8-primary) !important;
+  color: white !important;
+}
+
+.view-button--primary:hover:not(:disabled) {
+  background: var(--o8-primary-light) !important;
+  border-color: var(--o8-primary-light) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
+}
+
+.view-button--primary:active {
+  background: var(--o8-primary-dark) !important;
+  border-color: var(--o8-primary-dark) !important;
+}
+
+/* Tertiary Button - Amber/gold button */
+.view-button--tertiary {
+  background: var(--o8-tertiary) !important;
+  border-color: var(--o8-tertiary) !important;
+  color: black !important;
+}
+
+.view-button--tertiary:hover:not(:disabled) {
+  background: var(--o8-tertiary-light) !important;
+  border-color: var(--o8-tertiary-light) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);
+}
+
+.view-button--tertiary:active {
+  background: var(--o8-tertiary-dark) !important;
+  border-color: var(--o8-tertiary-dark) !important;
 }
 
 /* Connect button positioning - make it more visible */
@@ -752,6 +878,29 @@ button[style*="background: transparent"]:hover {
   font-size: 0.85rem;
   color: #b0b0b0;
   margin: 0;
+}
+
+.calculator-cta-button {
+  display: inline-block;
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #000;
+  background: linear-gradient(135deg, var(--o8-tertiary), var(--o8-tertiary-dark));
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  margin-bottom: 1rem;
+}
+
+.calculator-cta-button:hover {
+  background: linear-gradient(135deg, var(--o8-tertiary-light), var(--o8-tertiary));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);
 }
 
 .calculator-expand-button {
@@ -1523,4 +1672,178 @@ button[style*="background: transparent"]:hover {
   .batch-info {
     font-size: 0.85rem;
   }
+}
+
+/* ===========================================
+   EMPTY STATE
+   =========================================== */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  min-height: 400px;
+}
+
+.empty-state-icon {
+  color: #4a9eff;
+  opacity: 0.6;
+  margin-bottom: 2rem;
+}
+
+.empty-state-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0 0 1rem 0;
+}
+
+.empty-state-description {
+  font-size: 1rem;
+  color: #b0b0b0;
+  max-width: 500px;
+  line-height: 1.6;
+  margin: 0 0 2rem 0;
+}
+
+.empty-state-cta {
+  display: inline-block;
+  padding: 1rem 2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #000;
+  background: linear-gradient(135deg, var(--o8-tertiary), var(--o8-tertiary-dark));
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  margin-bottom: 1.5rem;
+}
+
+.empty-state-cta:hover {
+  background: linear-gradient(135deg, var(--o8-tertiary-light), var(--o8-tertiary));
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);
+}
+
+.empty-state-link {
+  color: #7a7a7a;
+  text-decoration: underline;
+  font-size: 0.9rem;
+  transition: color 0.3s ease;
+}
+
+.empty-state-link:hover {
+  color: #b0b0b0;
+}
+
+/* ===========================================
+   RESERVES PAGE HEADER
+   =========================================== */
+
+.reserves-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.reserves-header h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0;
+}
+
+.create-reserve-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #000;
+  background: linear-gradient(135deg, var(--o8-tertiary), var(--o8-tertiary-dark));
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.create-reserve-button:hover {
+  background: linear-gradient(135deg, var(--o8-tertiary-light), var(--o8-tertiary));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);
+}
+
+/* ===========================================
+   MODAL STYLES
+   =========================================== */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-content {
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 1.5rem 0 1.5rem;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #e0e0e0;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: #7a7a7a;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  line-height: 1;
+  transition: color 0.3s ease;
+}
+
+.modal-close:hover {
+  color: #e0e0e0;
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.modal-body .info-box {
+  margin-top: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
 }

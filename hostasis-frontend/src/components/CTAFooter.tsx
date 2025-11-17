@@ -21,7 +21,7 @@ const CTAFooter: React.FC = () => {
         {isConnected && (
           <div className="cta-footer-action">
             <p className="cta-footer-success">
-              You're connected! Scroll up to make your first deposit.
+              You&apos;re connected! Scroll up to make your first deposit.
             </p>
           </div>
         )}

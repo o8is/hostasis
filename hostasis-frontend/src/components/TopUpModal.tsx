@@ -6,7 +6,9 @@ import { useTopUpWithPermit } from '../hooks/usePostageManager';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import TokenAmount from './TokenAmount';
-import { formatTokenAmountFull } from '../utils/formatters';
+import TokenSelector from './TokenSelector';
+import { getMaxAmountString } from '../utils/maxAmount';
+import Modal from './Modal';
 
 type Deposit = {
   sDAIAmount: bigint;
@@ -29,7 +31,13 @@ export default function TopUpModal({
   const [topUpStep, setTopUpStep] = useState('');
 
   const conversion = useTokenConversion();
-  const { topUpWithPermit, isPending: isTopping, isSigning, isConfirming: isTopUpConfirming, isSuccess: isTopUpSuccess } = useTopUpWithPermit();
+  const {
+    topUpWithPermit,
+    isPending: isTopping,
+    isSigning,
+    isConfirming: isTopUpConfirming,
+    isSuccess: isTopUpSuccess,
+  } = useTopUpWithPermit();
 
   // Get deposit details
   const { data: deposit } = useReadContract({
@@ -60,7 +68,7 @@ export default function TopUpModal({
 
   const balance = getBalance();
   const tokenLabel = getTokenLabel();
-  const maxAmount = formatTokenAmountFull(balance);
+  const maxAmount = getMaxAmountString(balance);
 
   const handleTopUp = async () => {
     try {
@@ -76,23 +84,20 @@ export default function TopUpModal({
       }
 
       if (token === 'SDAI') {
-        // Direct top up
         setTopUpStep('Topping up with sDAI...');
         await topUpWithPermit(BigInt(depositIndex), amountBigInt);
       } else {
-        // Convert then top up
         await conversion.convertToSDAI(amountBigInt, token, async (sdaiAmount) => {
           setTopUpStep('Topping up with sDAI...');
           await topUpWithPermit(BigInt(depositIndex), sdaiAmount);
         });
       }
-    } catch (err: any) {
+    } catch {
       setTopUpStep('');
-      // Error is handled by conversion hook
     }
   };
 
-  const setMaxAmount = () => {
+  const setMaxAmountValue = () => {
     setAmount(maxAmount);
   };
 
@@ -116,109 +121,85 @@ export default function TopUpModal({
   const isValidAmount = amount && parseFloat(amount) > 0;
 
   return (
-    <div
-      className="modal-backdrop"
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '20px',
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="info-box"
-        style={{ maxWidth: '500px', width: '100%' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 style={{ marginTop: 0 }}>Top Up Deposit #{depositIndex}</h3>
-
-        {depositData && (
-          <p className="description">
-            Current: <TokenAmount value={depositData.sDAIAmount} symbol="sDAI" />
-          </p>
-        )}
-
+    <Modal title={`Top Up Reserve #${depositIndex}`} onClose={onClose}>
+      {depositData && (
         <p className="description">
-          Available: <TokenAmount value={balance} symbol={tokenLabel} />
+          Current: <TokenAmount value={depositData.sDAIAmount} symbol="sDAI" />
         </p>
+      )}
 
-        {conversion.currentToken && conversion.currentToken !== 'SDAI' && (
-          <p className="description" style={{ fontSize: '0.85rem', color: '#b0b0b0' }}>
-            {conversion.currentToken === 'NATIVE_XDAI' && "We'll wrap to wxDAI, convert to sDAI, then top up"}
-            {conversion.currentToken === 'WRAPPED_DAI' && "We'll convert to sDAI then top up"}
-          </p>
-        )}
+      <p className="description">
+        Available: <TokenAmount value={balance} symbol={tokenLabel} />
+      </p>
 
-        {currentStep && (
-          <p className="description" style={{ fontSize: '0.9rem', color: '#4a9eff' }}>
-            {currentStep}
-          </p>
-        )}
+      <TokenSelector
+        availableTokens={conversion.availableTokens}
+        currentToken={conversion.currentToken}
+        onSelectToken={conversion.setTokenOverride}
+        getBalance={conversion.getBalance}
+        getTokenLabel={conversion.getTokenLabel}
+        disabled={isLoading}
+      />
 
-        <div className="hash-input-container" style={{ marginTop: '1rem' }}>
-          <input
-            type="text"
-            className="hash-input"
-            placeholder="Amount to add"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            disabled={isLoading}
-          />
-        </div>
+      {conversion.currentToken && conversion.currentToken !== 'SDAI' && (
+        <p className="description" style={{ fontSize: '0.85rem', color: '#b0b0b0' }}>
+          {conversion.currentToken === 'NATIVE_XDAI' && "We'll convert xDAI → sDAI automatically"}
+          {conversion.currentToken === 'WRAPPED_DAI' && "We'll convert wxDAI → sDAI automatically"}
+        </p>
+      )}
 
-        <button
-          onClick={setMaxAmount}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#b0b0b0',
-            cursor: 'pointer',
-            fontSize: '0.85rem',
-            marginTop: '0.5rem',
-            textDecoration: 'underline',
-          }}
-        >
-          Use max amount
-        </button>
+      {currentStep && (
+        <p className="description" style={{ fontSize: '0.9rem', color: '#4a9eff' }}>
+          {currentStep}
+        </p>
+      )}
 
-        {error && (
-          <p className="error-message">{error}</p>
-        )}
-
-        {isTopUpSuccess && (
-          <p className="success-message">Top up successful!</p>
-        )}
-
-        {!conversion.currentToken && (
-          <p className="error-message">You need xDAI, wxDAI, or sDAI to top up</p>
-        )}
-
-        <div className="button-group">
-          <button
-            className="view-button"
-            onClick={handleTopUp}
-            disabled={!isValidAmount || isLoading || !conversion.currentToken}
-            style={{ flex: 1 }}
-          >
-            {isLoading ? (currentStep || 'Processing...') : 'Top Up'}
-          </button>
-          <button
-            className="view-button"
-            onClick={onClose}
-            disabled={isLoading}
-            style={{ flex: 1, opacity: 0.7 }}
-          >
-            Cancel
-          </button>
-        </div>
+      <div className="hash-input-container" style={{ marginTop: '1rem', marginBottom: '0.25rem' }}>
+        <input
+          type="text"
+          className="hash-input"
+          placeholder="Amount to add"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          disabled={isLoading}
+        />
       </div>
-    </div>
+
+      <button
+        onClick={setMaxAmountValue}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: '#b0b0b0',
+          cursor: 'pointer',
+          fontSize: '0.85rem',
+          padding: '0',
+          marginBottom: '1rem',
+          textDecoration: 'underline',
+        }}
+      >
+        Use max amount
+      </button>
+
+      {error && <p className="error-message">{error}</p>}
+
+      {isTopUpSuccess && <p className="success-message">Top up successful!</p>}
+
+      {!conversion.currentToken && <p className="error-message">You need xDAI, wxDAI, or sDAI to top up</p>}
+
+      <div className="button-group">
+        <button className="view-button" onClick={onClose} disabled={isLoading} style={{ flex: 1, opacity: 0.7 }}>
+          Cancel
+        </button>
+        <button
+          className="view-button view-button--primary"
+          onClick={handleTopUp}
+          disabled={!isValidAmount || isLoading || !conversion.currentToken}
+          style={{ flex: 1 }}
+        >
+          {isLoading ? currentStep || 'Processing...' : 'Top Up'}
+        </button>
+      </div>
+    </Modal>
   );
 }

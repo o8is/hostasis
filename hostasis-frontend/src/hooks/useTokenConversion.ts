@@ -33,19 +33,33 @@ export function useTokenConversion() {
   const [flowStep, setFlowStep] = useState<FlowStep>('idle');
   const [targetAmount, setTargetAmount] = useState<bigint>(0n);
   const [currentToken, setCurrentToken] = useState<TokenType | null>(null);
+  const [tokenOverride, setTokenOverride] = useState<TokenType | null>(null);
   const [currentStep, setCurrentStep] = useState('');
   const [error, setError] = useState('');
   const [onCompleteCallback, setOnCompleteCallback] = useState<((sdaiAmount: bigint) => void) | null>(null);
 
-  // Detect available token
+  // Get all available tokens with balances
+  const availableTokens: TokenType[] = [];
+  if (sdaiBalance && (sdaiBalance as bigint) > 0n) availableTokens.push('SDAI');
+  if (daiBalance && (daiBalance as bigint) > 0n) availableTokens.push('WRAPPED_DAI');
+  if (nativeBalance?.value && nativeBalance.value > 0n) availableTokens.push('NATIVE_XDAI');
+
+  // Detect available token (with override support)
   useEffect(() => {
     if (flowStep !== 'idle') return; // Don't change during conversion
 
+    // If user has manually selected a token and it has balance, use it
+    if (tokenOverride && availableTokens.includes(tokenOverride)) {
+      setCurrentToken(tokenOverride);
+      return;
+    }
+
+    // Auto-detect: prioritize sDAI > wxDAI > xDAI
     if (sdaiBalance && (sdaiBalance as bigint) > 0n) setCurrentToken('SDAI');
     else if (daiBalance && (daiBalance as bigint) > 0n) setCurrentToken('WRAPPED_DAI');
     else if (nativeBalance?.value && nativeBalance.value > 0n) setCurrentToken('NATIVE_XDAI');
     else setCurrentToken(null);
-  }, [nativeBalance, daiBalance, sdaiBalance, flowStep]);
+  }, [nativeBalance, daiBalance, sdaiBalance, flowStep, tokenOverride, availableTokens.length]);
 
   // State machine: Handle transaction success
   useEffect(() => {
@@ -230,6 +244,8 @@ export function useTokenConversion() {
     nativeBalance: nativeBalance?.value,
     daiBalance,
     sdaiBalance,
+    availableTokens,
+    setTokenOverride,
     convertToSDAI,
     resetConversion,
     previewConversion,

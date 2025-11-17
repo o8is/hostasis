@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { formatUnits, parseUnits } from 'viem';
+import Link from 'next/link';
 import { useSparkAPYWithFallback } from '../hooks/useSparkAPY';
 import { useSwarmPricingWithFallback } from '../hooks/useSwarmPricing';
 
@@ -26,7 +27,7 @@ const StorageCalculator: React.FC = () => {
     bzzPriceUSD,
     isRealTimeData: isPricingRealTime,
     isLoading: isPricingLoading
-  } = useSwarmPricingWithFallback(0.5);
+  } = useSwarmPricingWithFallback(0.1); // Fallback: 0.1 DAI/GB/year
 
   // Multi-factor buffer calculation for long-term protection
   const bufferFactors = useMemo(() => {
@@ -123,6 +124,13 @@ const StorageCalculator: React.FC = () => {
                 <div className="result-note">All hosting paid by yield</div>
               </div>
             </div>
+
+            <Link
+              href={`/reserves?amount=${calculations.recommendedReserve}`}
+              className="calculator-cta-button"
+            >
+              Create Reserve with {calculations.recommendedReserve} DAI
+            </Link>
 
             <button
               className="calculator-expand-button"
