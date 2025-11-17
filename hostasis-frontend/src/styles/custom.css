@@ -484,6 +484,67 @@ button[style*="background: transparent"]:hover {
 }
 
 /* ===========================================
+   CROSS-CHAIN DEPOSIT
+   =========================================== */
+
+.cross-chain-notice {
+  background: rgba(74, 158, 255, 0.08);
+  border: 1px solid rgba(74, 158, 255, 0.2);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.cross-chain-notice p {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.85rem;
+  color: #b0b0b0;
+  line-height: 1.4;
+}
+
+.chain-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: rgba(74, 158, 255, 0.15);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #4a9eff;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.route-estimate {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.estimate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  font-size: 0.85rem;
+  color: #9a9a9a;
+}
+
+.estimate-row.highlight {
+  color: #e0e0e0;
+  font-weight: 500;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 0.35rem;
+  padding-top: 0.7rem;
+}
+
+.estimate-value {
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+/* ===========================================
    INFO CARDS
    =========================================== */
 

@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { parseEther, type Hex } from 'viem';
+import { parseEther, formatUnits, type Hex } from 'viem';
+import { useChainId } from 'wagmi';
+import { gnosis } from 'wagmi/chains';
 import { useTokenConversion } from '../hooks/useTokenConversion';
 import { useDepositWithPermit } from '../hooks/usePostageManager';
+import { useEnsoRoute, SUPPORTED_SOURCE_CHAINS } from '../hooks/useEnsoRoute';
 import TokenAmount from './TokenAmount';
 import TokenSelector from './TokenSelector';
 import { getMaxAmountString } from '../utils/maxAmount';
@@ -18,8 +21,13 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
   const [stampId, setStampId] = useState('');
   const [error, setError] = useState('');
 
+  const chainId = useChainId();
+  const isOnGnosis = chainId === gnosis.id;
+  const currentChain = SUPPORTED_SOURCE_CHAINS.find(c => c.id === chainId);
+
   const conversion = useTokenConversion();
   const { depositWithPermit, isPending: isDepositing, isSigning, isConfirming, isSuccess: isDeposited } = useDepositWithPermit();
+  const ensoRoute = useEnsoRoute();
 
   const [depositStep, setDepositStep] = useState('');
 
@@ -121,10 +129,113 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
   const isValidStampId = stampId && normalizedStampId.match(/^0x[a-fA-F0-9]{64}$/);
 
   const currentStep = depositStep || conversion.currentStep;
-  const isLoading = conversion.isLoading || isDepositing || isSigning || isConfirming;
+  const isLoading = conversion.isLoading || isDepositing || isSigning || isConfirming || ensoRoute.isLoading || ensoRoute.isPending || ensoRoute.isConfirming;
   const isValidAmount = amount && parseFloat(amount) > 0;
 
-  const formContent = (
+  // Cross-chain deposit flow
+  const renderCrossChainForm = () => (
+    <>
+      {!isModal && <h3 style={{ marginTop: 0 }}>Create Reserve</h3>}
+
+      <div className="cross-chain-notice">
+        <span className="chain-badge">{currentChain?.name || 'Unknown Chain'}</span>
+        <p>
+          You&apos;re on {currentChain?.name}. We&apos;ll bridge and convert your tokens to sDAI on Gnosis automatically.
+        </p>
+      </div>
+
+      {ensoRoute.sourceTokenBalance && (
+        <p className="description">
+          Available: {formatUnits(ensoRoute.sourceTokenBalance, ensoRoute.sourceToken === 'USDC' || ensoRoute.sourceToken === 'USDT' ? 6 : 18)} {ensoRoute.sourceToken}
+        </p>
+      )}
+
+      <div className="hash-input-container" style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>
+        <input
+          type="text"
+          className="hash-input"
+          placeholder="Reserve amount (DAI)"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
+      <p className="description" style={{ fontSize: '0.8rem', color: '#7a7a7a', marginBottom: '1rem' }}>
+        Enter how much DAI you want in your reserve
+      </p>
+
+      {isValidAmount && !ensoRoute.routeData && !ensoRoute.isLoading && (
+        <button
+          className="view-button"
+          onClick={() => ensoRoute.getRoute(amount)}
+          style={{ marginBottom: '1rem' }}
+        >
+          Get Quote
+        </button>
+      )}
+
+      {ensoRoute.isLoading && (
+        <p className="description" style={{ fontSize: '0.9rem', color: '#4a9eff' }}>
+          Finding best route...
+        </p>
+      )}
+
+      {ensoRoute.routeData && ensoRoute.estimatedSourceAmount && (
+        <div className="route-estimate">
+          <div className="estimate-row">
+            <span>You pay</span>
+            <span className="estimate-value">{ensoRoute.estimatedSourceAmount} {ensoRoute.sourceToken}</span>
+          </div>
+          <div className="estimate-row">
+            <span>Bridge + swap fees</span>
+            <span className="estimate-value">~{ensoRoute.estimatedFees} {ensoRoute.sourceToken}</span>
+          </div>
+          <div className="estimate-row highlight">
+            <span>Reserve on Gnosis</span>
+            <span className="estimate-value">~{amount} sDAI</span>
+          </div>
+        </div>
+      )}
+
+      <div className="hash-input-container" style={{ marginTop: '0' }}>
+        <input
+          type="text"
+          className="hash-input"
+          placeholder="Swarm Batch ID (00...)"
+          value={stampId}
+          onChange={(e) => setStampId(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
+
+      {(error || ensoRoute.error) && <p className="error-message">{error || ensoRoute.error}</p>}
+
+      {ensoRoute.isSuccess && <p className="success-message">Cross-chain deposit initiated! Funds will arrive on Gnosis shortly.</p>}
+
+      <div className="button-group">
+        {onCancel && (
+          <button className="view-button" onClick={onCancel} disabled={isLoading} style={{ flex: 1, opacity: 0.7 }}>
+            Cancel
+          </button>
+        )}
+        <button
+          className="view-button view-button--tertiary"
+          onClick={() => ensoRoute.executeRoute()}
+          disabled={!isValidAmount || !isValidStampId || isLoading || !ensoRoute.routeData}
+          style={{ flex: 1 }}
+        >
+          {ensoRoute.isPending ? 'Confirm in wallet...' : ensoRoute.isConfirming ? 'Processing...' : `Deposit ${ensoRoute.estimatedSourceAmount || ''} ${ensoRoute.sourceToken}`}
+        </button>
+      </div>
+
+      <p className="description" style={{ fontSize: '0.75rem', color: '#7a7a7a', marginTop: '0.5rem', textAlign: 'center' }}>
+        Powered by Enso
+      </p>
+    </>
+  );
+
+  // Standard Gnosis deposit flow
+  const renderGnosisForm = () => (
     <>
       {!isModal && <h3 style={{ marginTop: 0 }}>Create Reserve</h3>}
 
@@ -217,6 +328,8 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
       </div>
     </>
   );
+
+  const formContent = isOnGnosis ? renderGnosisForm() : renderCrossChainForm();
 
   if (isModal) {
     return formContent;

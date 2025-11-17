@@ -1,11 +1,11 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
-import { gnosis } from 'wagmi/chains';
+import { gnosis, base, mainnet, arbitrum } from 'wagmi/chains';
 import { http, fallback } from 'wagmi';
 
 export const config = getDefaultConfig({
   appName: 'Hostasis - Swarm Postage Yield Distribution',
   projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'YOUR_PROJECT_ID',
-  chains: [gnosis],
+  chains: [gnosis, base, mainnet, arbitrum],
   transports: {
     [gnosis.id]: fallback([
       http('https://rpc.gnosischain.com', {
@@ -24,6 +24,9 @@ export const config = getDefaultConfig({
         retryDelay: 1000,
       }),
     ]),
+    [base.id]: http(),
+    [mainnet.id]: http(),
+    [arbitrum.id]: http(),
   },
   ssr: true,
 });
