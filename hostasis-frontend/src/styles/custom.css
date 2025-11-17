@@ -880,6 +880,40 @@ button[style*="background: transparent"]:hover {
   margin: 0;
 }
 
+.calculator-cost-breakdown {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.cost-breakdown-item {
+  display: flex;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  font-size: 0.85rem;
+}
+
+.cost-label {
+  color: #9a9a9a;
+  white-space: nowrap;
+}
+
+.cost-dots {
+  flex: 1;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.15);
+  margin: 0 0.5rem;
+  position: relative;
+  top: -0.25rem;
+}
+
+.cost-value {
+  color: #e0e0e0;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .calculator-cta-button {
   display: inline-block;
   width: 100%;

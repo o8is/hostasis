@@ -6,7 +6,9 @@ import { useSwarmPricingWithFallback } from '../hooks/useSwarmPricing';
 
 interface CalculatorResult {
   storageGB: number;
+  initialStampCost: string;
   recommendedReserve: string;
+  totalUpfrontCost: string;
   dailyYield: string;
   monthlyYield: string;
   yearlyYield: string;
@@ -62,8 +64,15 @@ const StorageCalculator: React.FC = () => {
     // Calculate yearly cost for storage using real-time pricing
     const yearlyStorageCost = storage * pricePerGBPerYearDAI;
 
+    // Calculate initial stamp cost (7 days coverage to give reserve time to accrue yield)
+    const initialDays = 7;
+    const initialStampCost = yearlyStorageCost * (initialDays / 365);
+
     // Calculate required reserve to generate enough yield with multi-factor buffer
     const requiredReserve = (yearlyStorageCost / SKY_APY) * bufferFactors.combinedBuffer;
+
+    // Total upfront cost = initial stamp + reserve deposit
+    const totalUpfrontCost = initialStampCost + requiredReserve;
 
     // Calculate yields
     const yearlyYield = requiredReserve * SKY_APY;
@@ -72,7 +81,9 @@ const StorageCalculator: React.FC = () => {
 
     return {
       storageGB: storage,
+      initialStampCost: initialStampCost.toFixed(2),
       recommendedReserve: requiredReserve.toFixed(2),
+      totalUpfrontCost: totalUpfrontCost.toFixed(2),
       dailyYield: dailyYield.toFixed(4),
       monthlyYield: monthlyYield.toFixed(2),
       yearlyYield: yearlyYield.toFixed(2),
@@ -113,9 +124,9 @@ const StorageCalculator: React.FC = () => {
           <div className="calculator-results">
             <div className="calculator-result-grid">
               <div className="calculator-result-card primary">
-                <div className="result-label">Recommended Reserve</div>
-                <div className="result-value">{calculations.recommendedReserve} DAI</div>
-                <div className="result-note">Your reserve stays yours</div>
+                <div className="result-label">Total Upfront Cost</div>
+                <div className="result-value">{calculations.totalUpfrontCost} DAI</div>
+                <div className="result-note">Initial stamp + reserve deposit</div>
               </div>
 
               <div className="calculator-result-card">
@@ -125,11 +136,24 @@ const StorageCalculator: React.FC = () => {
               </div>
             </div>
 
+            <div className="calculator-cost-breakdown">
+              <div className="cost-breakdown-item">
+                <span className="cost-label">Initial Stamp (7 days)</span>
+                <span className="cost-dots"></span>
+                <span className="cost-value">{calculations.initialStampCost} DAI</span>
+              </div>
+              <div className="cost-breakdown-item">
+                <span className="cost-label">Reserve Deposit</span>
+                <span className="cost-dots"></span>
+                <span className="cost-value">{calculations.recommendedReserve} DAI</span>
+              </div>
+            </div>
+
             <Link
-              href={`/reserves?amount=${calculations.recommendedReserve}`}
+              href={`/reserves?amount=${calculations.totalUpfrontCost}`}
               className="calculator-cta-button"
             >
-              Create Reserve with {calculations.recommendedReserve} DAI
+              Get Started with {calculations.totalUpfrontCost} DAI
             </Link>
 
             <button
