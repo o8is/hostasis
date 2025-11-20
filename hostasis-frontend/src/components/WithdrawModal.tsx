@@ -77,7 +77,11 @@ export default function WithdrawModal({
   const isLoading = isPending || isConfirming;
 
   return (
-    <Modal title={`Withdraw from Reserve #${depositIndex}`} onClose={onClose}>
+    <Modal title={`Cancel Reserve #${depositIndex}`} onClose={onClose}>
+      <div className="modal-warning">
+        <p>Warning: Withdrawing will remove funds from this reserve.</p>
+      </div>
+
       <p className="description">
         Available: <TokenAmount value={depositData?.sDAIAmount} symbol="sDAI" />
       </p>
@@ -115,10 +119,10 @@ export default function WithdrawModal({
 
       <div className="button-group">
         <button className="view-button" onClick={onClose} disabled={isLoading} style={{ flex: 1, opacity: 0.7 }}>
-          Cancel
+          Keep Reserve
         </button>
         <button
-          className="view-button view-button--primary"
+          className="view-button view-button--danger"
           onClick={handleWithdraw}
           disabled={!amount || isLoading}
           style={{ flex: 1 }}

@@ -5,17 +5,19 @@ import { useDepositWithPermit } from '../hooks/usePostageManager';
 import TokenAmount from './TokenAmount';
 import TokenSelector from './TokenSelector';
 import { getMaxAmountInfo } from '../utils/maxAmount';
+import { ensureBatchIdPrefix } from '../utils/batchId';
 
 interface DepositFormProps {
   onDepositSuccess?: () => void;
   initialAmount?: string;
+  initialStampId?: string;
   onCancel?: () => void;
   isModal?: boolean;
 }
 
-export default function DepositForm({ onDepositSuccess, initialAmount, onCancel, isModal = false }: DepositFormProps) {
+export default function DepositForm({ onDepositSuccess, initialAmount, initialStampId, onCancel, isModal = false }: DepositFormProps) {
   const [amount, setAmount] = useState(initialAmount || '');
-  const [stampId, setStampId] = useState('');
+  const [stampId, setStampId] = useState(initialStampId || '');
   const [error, setError] = useState('');
 
   const conversion = useTokenConversion();
@@ -36,6 +38,13 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
       setAmount(initialAmount);
     }
   }, [initialAmount]);
+
+  // Sync initial stamp ID from props (e.g., from upload page)
+  useEffect(() => {
+    if (initialStampId) {
+      setStampId(initialStampId);
+    }
+  }, [initialStampId]);
 
   // Handle successful deposit
   useEffect(() => {
@@ -83,7 +92,7 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
       setError('');
 
       // Normalize and validate stamp ID (must be 32 bytes hex)
-      const normalizedId = stampId.startsWith('0x') ? stampId : `0x${stampId}`;
+      const normalizedId = ensureBatchIdPrefix(stampId);
       if (!normalizedId.match(/^0x[a-fA-F0-9]{64}$/)) {
         setError('Invalid stamp ID. Must be 64 hex characters.');
         return;
@@ -123,7 +132,7 @@ export default function DepositForm({ onDepositSuccess, initialAmount, onCancel,
   };
 
   // Normalize stamp ID - accept with or without 0x prefix
-  const normalizedStampId = stampId.startsWith('0x') ? stampId : `0x${stampId}`;
+  const normalizedStampId = ensureBatchIdPrefix(stampId);
   const isValidStampId = stampId && normalizedStampId.match(/^0x[a-fA-F0-9]{64}$/);
 
   const currentStep = depositStep || conversion.currentStep;

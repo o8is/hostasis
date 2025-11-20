@@ -19,6 +19,8 @@ const ReservesPage: NextPage = () => {
 
   // Get amount from query string (e.g., /reserves?amount=100)
   const initialAmount = typeof router.query.amount === 'string' ? router.query.amount : undefined;
+  // Get stampId from query string (e.g., /reserves?stampId=0x...)
+  const initialStampId = typeof router.query.stampId === 'string' ? router.query.stampId : undefined;
 
   // Get deposit count to determine empty state
   const { data: depositCount, refetch: refetchDepositCount } = useReadContract({
@@ -33,18 +35,18 @@ const ReservesPage: NextPage = () => {
 
   const count = depositCount ? Number(depositCount) : 0;
 
-  // Auto-open modal if amount is in query string
+  // Auto-open modal if amount or stampId is in query string
   useEffect(() => {
-    if (initialAmount && isConnected) {
+    if ((initialAmount || initialStampId) && isConnected) {
       setShowCreateModal(true);
     }
-  }, [initialAmount, isConnected]);
+  }, [initialAmount, initialStampId, isConnected]);
 
   const handleCreateSuccess = () => {
     refetchDepositCount();
     setRefreshKey((prev) => prev + 1);
     // Clear the query string after successful creation
-    if (initialAmount) {
+    if (initialAmount || initialStampId) {
       router.replace('/reserves', undefined, { shallow: true });
     }
   };
@@ -52,7 +54,7 @@ const ReservesPage: NextPage = () => {
   const handleCloseModal = () => {
     setShowCreateModal(false);
     // Clear the query string if user closes without creating
-    if (initialAmount) {
+    if (initialAmount || initialStampId) {
       router.replace('/reserves', undefined, { shallow: true });
     }
   };
@@ -92,7 +94,7 @@ const ReservesPage: NextPage = () => {
       </div>
 
       {showCreateModal && (
-        <CreateReserveModal onClose={handleCloseModal} onSuccess={handleCreateSuccess} initialAmount={initialAmount} />
+        <CreateReserveModal onClose={handleCloseModal} onSuccess={handleCreateSuccess} initialAmount={initialAmount} initialStampId={initialStampId} />
       )}
     </>
   );

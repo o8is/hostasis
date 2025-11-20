@@ -198,7 +198,7 @@ export default function TopUpModal({
           Cancel
         </button>
         <button
-          className="view-button view-button--primary"
+          className="view-button view-button--tertiary"
           onClick={handleTopUp}
           disabled={!isValidAmount || isLoading || !conversion.currentToken}
           style={{ flex: 1 }}

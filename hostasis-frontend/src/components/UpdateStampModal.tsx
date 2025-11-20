@@ -52,8 +52,8 @@ export default function UpdateStampModal({
   const isLoading = isPending || isConfirming;
 
   return (
-    <Modal title={`Update Batch ID for Reserve #${depositIndex}`} onClose={onClose}>
-      <p className="description">Enter the new Swarm batch ID to direct future yield distributions to.</p>
+    <Modal title={`Update Content for Reserve #${depositIndex}`} onClose={onClose}>
+      <p className="description">Update this reserve to point to new content by entering a new batch ID.</p>
 
       <div className="hash-input-container" style={{ marginTop: '1rem' }}>
         <input

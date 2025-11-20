@@ -8,10 +8,16 @@
     "start": "next start"
   },
   "dependencies": {
+    "@ethersphere/bee-js": "^10.1.1",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
     "@o8is/brand": "^1.1.0",
     "@rainbow-me/rainbowkit": "^2.2.9",
     "@tanstack/react-query": "^5.90.7",
     "@vanilla-extract/dynamic": "^2.1.5",
+    "cafe-utility": "^33.3.2",
+    "jszip": "^3.10.1",
+    "multiformats": "^13.4.1",
     "next": "^15.3.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

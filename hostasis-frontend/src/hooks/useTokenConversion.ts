@@ -37,6 +37,7 @@ export function useTokenConversion() {
   const [currentStep, setCurrentStep] = useState('');
   const [error, setError] = useState('');
   const [onCompleteCallback, setOnCompleteCallback] = useState<((sdaiAmount: bigint) => void) | null>(null);
+  const [initialSDAIBalance, setInitialSDAIBalance] = useState<bigint>(0n);
 
   // Get all available tokens with balances
   const availableTokens: TokenType[] = [];
@@ -72,16 +73,16 @@ export function useTokenConversion() {
         await refetchDAI();
         await refetchAllowance();
 
-        const wrapped = (daiBalance as bigint) || 0n;
+        // Use targetAmount instead of total balance
         const allowance = (daiAllowance as bigint) || 0n;
 
-        if (allowance < wrapped) {
+        if (allowance < targetAmount) {
           setFlowStep('approving');
           writeContract({
             address: DAI_ADDRESS,
             abi: ERC20_ABI,
             functionName: 'approve',
-            args: [SDAI_ADDRESS, wrapped],
+            args: [SDAI_ADDRESS, targetAmount],
           });
         } else {
           setFlowStep('converting');
@@ -90,7 +91,7 @@ export function useTokenConversion() {
             address: SDAI_ADDRESS,
             abi: sDAI_ABI,
             functionName: 'deposit',
-            args: [wrapped, address],
+            args: [targetAmount, address],
           });
         }
       } else if (flowStep === 'approving') {
@@ -108,19 +109,27 @@ export function useTokenConversion() {
         // Done!
         setFlowStep('complete');
         setCurrentStep('Conversion complete!');
-        await refetchSDAI();
 
         // Execute callback if provided
         if (onCompleteCallback) {
-          const finalBalance = (sdaiBalance as bigint) || 0n;
-          onCompleteCallback(finalBalance);
+          // Refetch balance to get the ACTUAL sDAI received (not calculated)
+          // This handles rounding differences between our calculation and the contract
+          const refetchResult = await refetchSDAI();
+          const balanceAfter = refetchResult.data ? (refetchResult.data as bigint) : 0n;
+
+          // Calculate actual sDAI received from this conversion
+          // Use the snapshot we took before starting the conversion
+          const sdaiReceived = balanceAfter - initialSDAIBalance;
+
+          onCompleteCallback(sdaiReceived);
           setOnCompleteCallback(null);
         }
       }
     };
 
     advance();
-  }, [txSuccess, onCompleteCallback, sdaiBalance]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txSuccess]);
 
   /**
    * Convert any token to sDAI with optional callback on completion
@@ -135,6 +144,7 @@ export function useTokenConversion() {
     }
 
     setTargetAmount(amount);
+    setInitialSDAIBalance((sdaiBalance as bigint) || 0n);
     setError('');
     if (onComplete) {
       setOnCompleteCallback(() => onComplete);
@@ -196,6 +206,7 @@ export function useTokenConversion() {
   const resetConversion = () => {
     setFlowStep('idle');
     setTargetAmount(0n);
+    setInitialSDAIBalance(0n);
     setCurrentStep('');
     setError('');
   };

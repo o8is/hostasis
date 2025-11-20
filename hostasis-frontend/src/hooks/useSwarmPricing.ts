@@ -1,17 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
+import { usePublicClient } from 'wagmi';
+import { POSTAGE_STAMP_ADDRESS, BZZ_ADDRESS } from '../contracts/addresses';
+import PostageStampABI from '../contracts/abis/PostageStamp.json';
 
 interface SwarmStatsResponse {
   pricePerGBPerMonth: number;
-}
-
-interface BZZPriceResponse {
-  price: number;
 }
 
 interface SwarmPricingData {
   pricePerGBPerMonthBZZ: number | null;
   pricePerGBPerYearDAI: number | null;
   bzzPriceUSD: number | null;
+  currentPricePerChunk: bigint | null;
   isLoading: boolean;
   error: Error | null;
 }
@@ -22,13 +22,16 @@ interface SwarmPricingData {
  * Fetches:
  * - Storage cost per GB per month in BZZ from Swarmscan API
  * - BZZ token price in USD
+ * - Current on-chain price per chunk from PostageStamp contract
  *
  * Calculates:
  * - Annual storage cost per GB in DAI (assuming DAI = USD)
  */
 export function useSwarmPricing(): SwarmPricingData {
+  const publicClient = usePublicClient();
   const [pricePerGBPerMonthBZZ, setPricePerGBPerMonthBZZ] = useState<number | null>(null);
   const [bzzPriceUSD, setBzzPriceUSD] = useState<number | null>(null);
+  const [currentPricePerChunk, setCurrentPricePerChunk] = useState<bigint | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -38,11 +41,18 @@ export function useSwarmPricing(): SwarmPricingData {
         setIsLoading(true);
         setError(null);
 
-        // Fetch both APIs in parallel
-        const [swarmStatsResponse, bzzPriceResponse] = await Promise.all([
+        // Fetch API data and on-chain price in parallel
+        const bzzContractAddress = BZZ_ADDRESS.toLowerCase();
+        const [swarmStatsResponse, bzzPriceResponse, onChainPrice] = await Promise.all([
           fetch('https://api.swarmscan.io/v1/postage-stamps/stats'),
-          // Using CoinGecko API for BZZ price (free tier)
-          fetch('https://api.coingecko.com/api/v3/simple/price?ids=swarm&vs_currencies=usd')
+          // Using CoinGecko API for BZZ price on Gnosis Chain (platform ID: xdai)
+          fetch(`https://api.coingecko.com/api/v3/simple/token_price/xdai?contract_addresses=${bzzContractAddress}&vs_currencies=usd`),
+          // Fetch on-chain price from PostageStamp contract
+          publicClient?.readContract({
+            address: POSTAGE_STAMP_ADDRESS,
+            abi: PostageStampABI,
+            functionName: 'lastPrice',
+          }).catch(() => null) // Don't fail if contract read fails
         ]);
 
         if (!swarmStatsResponse.ok) {
@@ -57,7 +67,9 @@ export function useSwarmPricing(): SwarmPricingData {
         const bzzPriceData = await bzzPriceResponse.json();
 
         setPricePerGBPerMonthBZZ(swarmStats.pricePerGBPerMonth);
-        setBzzPriceUSD(bzzPriceData.swarm?.usd || null);
+        const fetchedBzzPrice = bzzPriceData[bzzContractAddress]?.usd || null;
+        setBzzPriceUSD(fetchedBzzPrice);
+        setCurrentPricePerChunk(onChainPrice as bigint | null);
 
       } catch (err) {
         console.error('Error fetching Swarm pricing:', err);
@@ -73,7 +85,7 @@ export function useSwarmPricing(): SwarmPricingData {
     const interval = setInterval(fetchPricing, 5 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [publicClient]);
 
   // Calculate yearly cost in DAI (assuming DAI ≈ USD)
   const pricePerGBPerYearDAI = useMemo(() => {
@@ -92,6 +104,7 @@ export function useSwarmPricing(): SwarmPricingData {
     pricePerGBPerMonthBZZ,
     pricePerGBPerYearDAI,
     bzzPriceUSD,
+    currentPricePerChunk,
     isLoading,
     error,
   };
@@ -100,19 +113,27 @@ export function useSwarmPricing(): SwarmPricingData {
 /**
  * Hook with fallback pricing if real-time fetch fails
  */
-export function useSwarmPricingWithFallback(fallbackPricePerGBPerYear: number = 0.5): SwarmPricingData & { isRealTimeData: boolean } {
-  const { pricePerGBPerYearDAI, pricePerGBPerMonthBZZ, bzzPriceUSD, isLoading, error } = useSwarmPricing();
+export function useSwarmPricingWithFallback(
+  fallbackPricePerGBPerYear: number = 0.5,
+  fallbackBzzPriceUSD: number = 0.10
+): SwarmPricingData & { isRealTimeData: boolean } {
+  const { pricePerGBPerYearDAI, pricePerGBPerMonthBZZ, bzzPriceUSD, currentPricePerChunk, isLoading, error } = useSwarmPricing();
 
   const effectivePrice = useMemo(() => {
     return pricePerGBPerYearDAI !== null ? pricePerGBPerYearDAI : fallbackPricePerGBPerYear;
   }, [pricePerGBPerYearDAI, fallbackPricePerGBPerYear]);
 
+  const effectiveBzzPrice = useMemo(() => {
+    return bzzPriceUSD !== null ? bzzPriceUSD : fallbackBzzPriceUSD;
+  }, [bzzPriceUSD, fallbackBzzPriceUSD]);
+
   return {
     pricePerGBPerMonthBZZ,
     pricePerGBPerYearDAI: effectivePrice,
-    bzzPriceUSD,
+    bzzPriceUSD: effectiveBzzPrice,
+    currentPricePerChunk,
     isLoading,
     error,
-    isRealTimeData: pricePerGBPerYearDAI !== null,
+    isRealTimeData: pricePerGBPerYearDAI !== null && bzzPriceUSD !== null,
   };
 }

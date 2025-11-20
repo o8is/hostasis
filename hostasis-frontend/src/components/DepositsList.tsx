@@ -1,18 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import WithdrawModal from './WithdrawModal';
 import UpdateStampModal from './UpdateStampModal';
 import TopUpModal from './TopUpModal';
-import TokenAmount from './TokenAmount';
-
-type Deposit = {
-  sDAIAmount: bigint;
-  principalDAI: bigint;
-  stampId: string;
-  depositTime: bigint;
-};
+import DepositCard from './DepositCard';
 
 export default function DepositsList() {
   const { address } = useAccount();
@@ -44,22 +37,22 @@ export default function DepositsList() {
           </p>
         ) : (
           <div className="deposits-grid">
-            {Array.from({ length: count }, (_, i) => (
+            {Array.from({ length: count }, (_, i) => count - 1 - i).map((depositIndex) => (
               <DepositCard
-                key={i}
-                depositIndex={i}
+                key={depositIndex}
+                depositIndex={depositIndex}
                 userAddress={address!}
                 refetchTrigger={refetchTrigger}
                 onWithdraw={() => {
-                  setSelectedDeposit(i);
+                  setSelectedDeposit(depositIndex);
                   setShowWithdrawModal(true);
                 }}
                 onUpdateStamp={() => {
-                  setSelectedDeposit(i);
+                  setSelectedDeposit(depositIndex);
                   setShowUpdateStampModal(true);
                 }}
                 onTopUp={() => {
-                  setSelectedDeposit(i);
+                  setSelectedDeposit(depositIndex);
                   setShowTopUpModal(true);
                 }}
               />
@@ -110,72 +103,5 @@ export default function DepositsList() {
         />
       )}
     </>
-  );
-}
-
-function DepositCard({
-  depositIndex,
-  userAddress,
-  onWithdraw,
-  onUpdateStamp,
-  onTopUp,
-  refetchTrigger,
-}: {
-  depositIndex: number;
-  userAddress: string;
-  onWithdraw: () => void;
-  onUpdateStamp: () => void;
-  onTopUp: () => void;
-  refetchTrigger?: number;
-}) {
-  const { data: deposit, refetch } = useReadContract({
-    address: POSTAGE_MANAGER_ADDRESS,
-    abi: PostageManagerABI,
-    functionName: 'getUserDeposit',
-    args: [userAddress, BigInt(depositIndex)],
-  });
-
-  // Refetch when trigger changes
-  useEffect(() => {
-    if (refetchTrigger !== undefined && refetchTrigger > 0) {
-      refetch();
-    }
-  }, [refetchTrigger, refetch]);
-
-  if (!deposit) return null;
-
-  const depositData = deposit as unknown as Deposit;
-  const depositDate = new Date(Number(depositData.depositTime) * 1000);
-
-  return (
-    <div className="info-box deposit-card">
-      <h4 style={{ marginTop: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>Reserve #{depositIndex}</span>
-        <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: '#7a7a7a' }}>
-          {depositDate.toLocaleDateString()}
-        </span>
-      </h4>
-
-      <div style={{ fontSize: '0.9rem', lineHeight: '1.8' }}>
-        <p>
-          <strong>Reserved:</strong> <TokenAmount value={depositData.principalDAI} symbol="DAI" />
-        </p>
-        <p style={{ wordBreak: 'break-all' }}>
-          <strong>Batch ID:</strong> {depositData.stampId}
-        </p>
-      </div>
-
-      <div className="button-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-        <button className="view-button" onClick={onTopUp}>
-          Top Up
-        </button>
-        <button className="view-button" onClick={onWithdraw}>
-          Withdraw
-        </button>
-        <button className="view-button" onClick={onUpdateStamp} style={{ opacity: 0.8, gridColumn: '1 / -1' }}>
-          Update Stamp
-        </button>
-      </div>
-    </div>
   );
 }

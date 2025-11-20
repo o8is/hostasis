@@ -23,6 +23,9 @@ export default function Navigation() {
             <Link href="/" className="nav-menu-item">
               Home
             </Link>
+            <Link href="/upload" className="nav-menu-item">
+              Upload
+            </Link>
             <Link href="/reserves" className="nav-menu-item">
               Reserves
             </Link>
@@ -85,6 +88,9 @@ export default function Navigation() {
         <div className="nav-mobile-menu">
           <Link href="/" className="nav-mobile-item" onClick={() => setMobileMenuOpen(false)}>
             Home
+          </Link>
+          <Link href="/upload" className="nav-mobile-item" onClick={() => setMobileMenuOpen(false)}>
+            Upload
           </Link>
           <Link href="/reserves" className="nav-mobile-item" onClick={() => setMobileMenuOpen(false)}>
             Reserves
