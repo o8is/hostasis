@@ -163,7 +163,8 @@ contract KeeperIncentivesTest is Test {
 
         manager.harvest();
 
-        (,,,,, bool active) = manager.distributionState();
+        bool active;
+        (,,,,,active) = manager.distributionState();
         assertTrue(active, "Distribution should be active");
     }
 
@@ -193,7 +194,7 @@ contract KeeperIncentivesTest is Test {
         manager.harvest();
 
         // Check distribution is active
-        (uint256 totalBZZ1,,,,, bool active1) = manager.distributionState();
+        (uint256 totalBZZ1, , , , , bool active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
         uint256 keeperFeePool1 = manager.keeperFeePool();
         assertGt(keeperFeePool1, 0, "Keeper fee pool should have fees from first harvest");
@@ -213,7 +214,8 @@ contract KeeperIncentivesTest is Test {
         manager.processBatch(10); // Process all users
 
         // Distribution should now be complete
-        (,,,,, bool activeAfter) = manager.distributionState();
+        bool activeAfter;
+        (,,,,,activeAfter) = manager.distributionState();
         assertFalse(activeAfter, "Distribution should be inactive after processBatch");
 
         // NOW harvest should work again
@@ -225,7 +227,9 @@ contract KeeperIncentivesTest is Test {
         assertGt(keeperFeePool2, 0, "Second harvest should generate keeper fees");
 
         // Verify second distribution is active
-        (uint256 totalBZZ2,,,,, bool active2) = manager.distributionState();
+        (uint256 totalBZZ2,,,,,) = manager.distributionState();
+        bool active2;
+        (,,,,,active2) = manager.distributionState();
         assertTrue(active2, "Distribution should be active after second harvest");
         assertGt(totalBZZ2, 0, "Should have BZZ from second harvest");
     }
@@ -335,15 +339,17 @@ contract KeeperIncentivesTest is Test {
         sdai.setExchangeRate(1.2e18);
         manager.harvest();
 
-        (,,,,, bool activeBefore) = manager.distributionState();
+        bool activeBefore;
+        (,,,,,activeBefore) = manager.distributionState();
         assertTrue(activeBefore, "Distribution should be active before processing");
 
         // Process all users
         vm.prank(keeper1);
         manager.processBatch(100); // Large batch size to complete
 
-        (,,,,, bool activeAfter) = manager.distributionState();
-        assertFalse(activeAfter, "Distribution should be inactive after completion");
+        bool activeAfter2;
+        (,,,,,activeAfter2) = manager.distributionState();
+        assertFalse(activeAfter2, "Distribution should be inactive after completion");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -511,8 +517,10 @@ contract KeeperIncentivesTest is Test {
         uint256 keeperFeePoolAfterHarvest = manager.keeperFeePool();
         assertGt(keeperFeePoolAfterHarvest, 0, "Keeper fee pool should have funds");
 
-        (uint256 totalBZZ,,,,, bool active) = manager.distributionState();
-        assertTrue(active, "Distribution should be active");
+        (uint256 totalBZZ,,,,,) = manager.distributionState();
+        bool active3;
+        (,,,,,active3) = manager.distributionState();
+        assertTrue(active3, "Distribution should be active");
         assertGt(totalBZZ, 0, "Should have BZZ to distribute");
 
         // 4. Keeper processes batches
@@ -534,7 +542,8 @@ contract KeeperIncentivesTest is Test {
         assertGt(keeper2AfterBatch, keeper2InitialBalance, "Keeper2 should earn fees");
 
         // 6. Distribution should be complete
-        (,,,,, bool stillActive) = manager.distributionState();
+        bool stillActive;
+        (,,,,,stillActive) = manager.distributionState();
         assertFalse(stillActive, "Distribution should be complete");
 
         // 7. Verify BZZ was distributed to stamps
@@ -607,7 +616,9 @@ contract KeeperIncentivesTest is Test {
         manager.processBatch(batchSize);
 
         // Should either complete or make progress
-        (, uint256 cursor,,,, bool active) = manager.distributionState();
+        (, uint256 cursor,,,,) = manager.distributionState();
+        bool active;
+        (,,,,,active) = manager.distributionState();
 
         if (!active) {
             // Distribution completed - state is deleted, so cursor will be 0

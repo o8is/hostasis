@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
@@ -99,7 +100,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     struct Deposit {
         uint256 sDAIAmount; // Amount of sDAI shares deposited
         uint256 principalDAI; // DAI value at time of deposit (prevents yield theft)
-        uint256 lastYieldPerShare; // Dividend tracking: yieldPerShare value at last claim
+        uint256 totalYieldClaimed; // Cumulative yield claimed in DAI (for calculating unclaimed yield)
         bytes32 stampId; // Swarm postage batch ID to fund
         uint256 depositTime; // Timestamp of deposit
     }
@@ -125,17 +126,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @notice Accumulated keeper fees (in DAI)
     uint256 public keeperFeePool;
 
-    /// @notice Dividend accumulator: total DAI yield per sDAI share (scaled by 1e18)
-    /// @dev This is a monotonically increasing value that tracks cumulative yield distribution
-    uint256 public yieldPerShare;
-
     /// @notice Distribution state
     struct DistributionState {
         uint256 totalBZZ; // Total BZZ to distribute
         uint256 cursor; // Current position in activeUsers array
-        uint256 harvestYieldPerShare; // Snapshot of yieldPerShare at harvest time
-        uint256 totalYieldDAI; // Total yield in DAI for this harvest
+        uint256 totalYieldDAI; // Total yield in DAI for this harvest (for BZZ distribution)
         uint256 snapshotRate; // Exchange rate (DAI per sDAI) at time of harvest
+        uint256 snapshotTotalSDAI; // Total sDAI at time of harvest (for proportional yield calculation)
         bool active; // Is distribution ongoing
     }
     DistributionState public distributionState;
@@ -201,7 +198,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         uint256 currentRate = SDAI.convertToAssets(1e18); // DAI per 1 sDAI
 
         // Calculate DAI value at current rate
-        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+        uint256 daiValue = Math.mulDiv(sDAIAmount, currentRate, 1e18, Math.Rounding.Floor);
 
         // Transfer sDAI from user
         IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
@@ -212,7 +209,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
             Deposit({
                 sDAIAmount: sDAIAmount,
                 principalDAI: daiValue,
-                lastYieldPerShare: yieldPerShare, // Initialize to current accumulator value
+                totalYieldClaimed: 0, // Initialize to 0, will accumulate as yield is claimed
                 stampId: stampId,
                 depositTime: block.timestamp
             })
@@ -251,7 +248,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         uint256 currentRate = SDAI.convertToAssets(1e18); // DAI per 1 sDAI
 
         // Calculate DAI value at current rate
-        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+        uint256 daiValue = Math.mulDiv(sDAIAmount, currentRate, 1e18, Math.Rounding.Floor);
 
         // Transfer sDAI from user
         IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
@@ -262,7 +259,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
             Deposit({
                 sDAIAmount: sDAIAmount,
                 principalDAI: daiValue,
-                lastYieldPerShare: yieldPerShare, // Initialize to current accumulator value
+                totalYieldClaimed: 0, // Initialize to 0, will accumulate as yield is claimed
                 stampId: stampId,
                 depositTime: block.timestamp
             })
@@ -291,7 +288,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         if (sDAIAmount > userDeposit.sDAIAmount) revert InsufficientBalance();
 
         // Calculate proportional DAI value to subtract
-        uint256 daiValueWithdrawn = (userDeposit.principalDAI * sDAIAmount) / userDeposit.sDAIAmount;
+        uint256 daiValueWithdrawn = Math.mulDiv(userDeposit.principalDAI, sDAIAmount, userDeposit.sDAIAmount, Math.Rounding.Floor);
 
         // Update deposit
         userDeposit.sDAIAmount -= sDAIAmount;
@@ -343,7 +340,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         uint256 currentRate = SDAI.convertToAssets(1e18); // DAI per 1 sDAI
 
         // Calculate DAI value at current rate
-        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+        uint256 daiValue = Math.mulDiv(sDAIAmount, currentRate, 1e18, Math.Rounding.Floor);
 
         // Transfer sDAI from user
         IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
@@ -385,7 +382,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         uint256 currentRate = SDAI.convertToAssets(1e18);
 
         // Calculate DAI value at current rate
-        uint256 daiValue = (sDAIAmount * currentRate) / 1e18;
+        uint256 daiValue = Math.mulDiv(sDAIAmount, currentRate, 1e18, Math.Rounding.Floor);
 
         // Transfer sDAI from user
         IERC20(address(SDAI)).safeTransferFrom(msg.sender, address(this), sDAIAmount);
@@ -418,7 +415,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         uint256 currentRate = SDAI.convertToAssets(1e18);
 
         // Calculate current total value in DAI
-        uint256 currentValueDAI = (totalSDAI * currentRate) / 1e18;
+        uint256 currentValueDAI = Math.mulDiv(totalSDAI, currentRate, 1e18, Math.Rounding.Floor);
 
         // Yield = current value - original principal
         if (currentValueDAI > totalPrincipalDAI) {
@@ -435,7 +432,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
 
         Deposit memory userDeposit = userDeposits[user][depositIndex];
         uint256 currentRate = SDAI.convertToAssets(1e18);
-        uint256 currentValue = (userDeposit.sDAIAmount * currentRate) / 1e18;
+        uint256 currentValue = Math.mulDiv(userDeposit.sDAIAmount, currentRate, 1e18, Math.Rounding.Floor);
 
         if (currentValue > userDeposit.principalDAI) {
             yieldDAI = currentValue - userDeposit.principalDAI;
@@ -461,13 +458,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         // Snapshot exchange rate at harvest time for yield calculations
         uint256 currentRate = SDAI.convertToAssets(1e18);
 
-        // Update dividend accumulator BEFORE reducing totalSDAI
-        // This tracks cumulative yield per share for all deposits
-        uint256 yieldPerShareIncrease = (totalYield * 1e18) / totalSDAI;
-        yieldPerShare += yieldPerShareIncrease;
-
         // Calculate sDAI shares representing the yield
-        uint256 yieldShares = (totalYield * 1e18) / currentRate;
+        // This exact amount will be removed from totalSDAI and distributed in processBatch
+        uint256 yieldShares = Math.mulDiv(totalYield, 1e18, currentRate, Math.Rounding.Floor);
+
+        // Snapshot totalSDAI BEFORE reducing it
+        // This is used in processBatch to calculate each deposit's proportional yield
+        uint256 snapshotTotalSDAI = totalSDAI;
 
         // Update global accounting: reduce totalSDAI (yield shares removed)
         // Note: totalPrincipalDAI stays unchanged - principals never change in DAI terms
@@ -478,14 +475,14 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         uint256 daiReceived = SDAI.redeem(yieldShares, address(this), address(this));
 
         // Pay harvester fee first
-        uint256 harvesterFee = (daiReceived * harvesterFeeBps) / 10000;
+        uint256 harvesterFee = Math.mulDiv(daiReceived, harvesterFeeBps, 10000, Math.Rounding.Floor);
         if (harvesterFee > 0) {
             DAI.safeTransfer(msg.sender, harvesterFee);
             emit HarvesterFeePaid(msg.sender, harvesterFee);
         }
 
         // Allocate keeper fees
-        uint256 keeperFee = (daiReceived * keeperFeeBps) / 10000;
+        uint256 keeperFee = Math.mulDiv(daiReceived, keeperFeeBps, 10000, Math.Rounding.Floor);
         keeperFeePool += keeperFee;
         uint256 daiToSwap = daiReceived - harvesterFee - keeperFee;
 
@@ -496,9 +493,9 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         distributionState = DistributionState({
             totalBZZ: bzzReceived,
             cursor: 0,
-            harvestYieldPerShare: yieldPerShare, // Snapshot of accumulator at harvest
-            totalYieldDAI: totalYield, // Total yield in DAI for this harvest
+            totalYieldDAI: totalYield, // Total yield in DAI for this harvest (for BZZ distribution)
             snapshotRate: currentRate, // Exchange rate at harvest
+            snapshotTotalSDAI: snapshotTotalSDAI, // Total sDAI before yield removal (for proportional calc)
             active: true
         });
 
@@ -539,16 +536,27 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                 Deposit storage dep = deposits[j];
                 if (dep.sDAIAmount == 0) continue;
 
-                // Calculate this deposit's unclaimed yield using dividend accumulator
-                // yieldPerShareDelta represents yield earned since last claim
-                uint256 yieldPerShareDelta = state.harvestYieldPerShare - dep.lastYieldPerShare;
-                uint256 depositYield = (dep.sDAIAmount * yieldPerShareDelta) / 1e18;
+                // DIRECT YIELD CALCULATION (no accumulator!)
+                // Calculate this deposit's proportional share of ORIGINAL total yield in this harvest
+                // We use snapshotTotalSDAI (before any distributions) to ensure consistent proportions
+                // across batched processBatch calls
+                // Initial yieldShares = snapshotTotalSDAI - totalSDAI (what was removed in harvest)
+                // Use Ceil rounding to ensure sum(depositYieldShares) >= originalYieldShares
+                // This leaves dust in the contract rather than giving users more than removed
+                uint256 originalYieldShares = state.snapshotTotalSDAI - totalSDAI;
+                uint256 depositYieldShares = Math.mulDiv(
+                    dep.sDAIAmount, 
+                    originalYieldShares,
+                    state.snapshotTotalSDAI, 
+                    Math.Rounding.Ceil
+                );
 
-                // Calculate sDAI shares that represent this yield (to be consumed)
-                uint256 depositYieldShares = depositYield > 0 ? (depositYield * 1e18) / state.snapshotRate : 0;
+                // Calculate DAI value of this yield for BZZ distribution
+                // We need to know the DAI value to distribute BZZ proportionally based on value, not shares
+                uint256 depositYieldDAI = Math.mulDiv(depositYieldShares, state.snapshotRate, 1e18, Math.Rounding.Floor);
 
-                // Distribute BZZ proportional to yield (not shares!)
-                uint256 bzzShare = depositYield > 0 ? (state.totalBZZ * depositYield) / state.totalYieldDAI : 0;
+                // Distribute BZZ proportional to DAI value (to prevent yield theft between depositors at different rates)
+                uint256 bzzShare = depositYieldDAI > 0 ? Math.mulDiv(state.totalBZZ, depositYieldDAI, state.totalYieldDAI, Math.Rounding.Floor) : 0;
 
                 if (bzzShare > 0) {
                     // Get batch depth to calculate per-chunk amount
@@ -573,12 +581,16 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                     }
                 }
 
-                // Update deposit accounting: reduce shares and update claim point
-                // This keeps sum(deposit.sDAIAmount) = totalSDAI invariant
-                if (depositYieldShares > 0 && depositYieldShares <= dep.sDAIAmount) {
+                // Update deposit accounting: reduce shares
+                if (depositYieldShares > 0) {
+                    // Clamp to deposit amount (safety check)
+                    if (depositYieldShares > dep.sDAIAmount) depositYieldShares = dep.sDAIAmount;
+                    
                     dep.sDAIAmount -= depositYieldShares;
+                    
+                    // Track cumulative yield claimed in DAI terms
+                    dep.totalYieldClaimed += Math.mulDiv(depositYieldShares, state.snapshotRate, 1e18, Math.Rounding.Floor);
                 }
-                dep.lastYieldPerShare = state.harvestYieldPerShare;
             }
 
             usersProcessed++;
@@ -661,7 +673,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
 
         // Slippage protection: ensure we got at least 1% of input value
         // This is very conservative - actual swap should give much more based on pool price
-        uint256 minBZZ = daiAmount / 100;
+        uint256 minBZZ = Math.mulDiv(daiAmount, 1, 100, Math.Rounding.Floor);
         if (bzzAmount < minBZZ) revert SlippageTooHigh();
     }
 

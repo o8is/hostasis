@@ -585,7 +585,7 @@ contract PostageYieldManagerTest is Test {
         // 5. Second harvest - critical test: ensure no over-allocation
         manager.harvest();
 
-        (uint256 totalBZZ,,, uint256 totalYieldDAI, uint256 snapshotRate,) = manager.distributionState();
+        (uint256 totalBZZ,, uint256 totalYieldDAI, uint256 snapshotRate,,) = manager.distributionState();
 
         // Alice's shares should remain at reduced level (from first processBatch)
         PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfterHarvest2 = manager.getUserDeposit(alice, 0);
@@ -743,7 +743,7 @@ contract PostageYieldManagerTest is Test {
         // Harvest yield
         manager.harvest();
 
-        (uint256 totalBZZ,,, uint256 totalYieldDAI, uint256 snapshotRate,) = manager.distributionState();
+        (uint256 totalBZZ,, uint256 totalYieldDAI, uint256 snapshotRate,,) = manager.distributionState();
 
         // Verify shares remain unchanged
         PostageYieldManagerUpgradeable.Deposit memory aliceDepositAfter = manager.getUserDeposit(alice, 0);
@@ -801,7 +801,9 @@ contract PostageYieldManagerTest is Test {
         sdai.setExchangeRate(1.1e18);
         manager.harvest();
 
-        (uint256 totalBZZAfter1,,,,, bool active1) = manager.distributionState();
+        (uint256 totalBZZAfter1,,,,,) = manager.distributionState();
+        bool active1;
+        (,,,,,active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
 
         // Attempt second harvest - should revert
@@ -817,7 +819,9 @@ contract PostageYieldManagerTest is Test {
         sdai.setExchangeRate(1.3e18);
         manager.harvest();
 
-        (uint256 totalBZZAfter2,,,,, bool active2) = manager.distributionState();
+        (uint256 totalBZZAfter2,,,,,) = manager.distributionState();
+        bool active2;
+        (,,,,,active2) = manager.distributionState();
         assertTrue(active2, "Distribution should be active after second harvest");
     }
 
@@ -869,5 +873,173 @@ contract PostageYieldManagerTest is Test {
         uint256 totalSDAIBefore = 200e18; // Both deposited 100
         uint256 totalSDAIAfter = manager.totalSDAI();
         assertLt(totalSDAIAfter, totalSDAIBefore, "Global totalSDAI reduced after harvest");
+    }
+
+    /// @notice REGRESSION TEST: Withdrawing full balance should work after harvest + processBatch
+    /// Bug: processBatch has a condition that skips reducing user shares if depositYieldShares > dep.sDAIAmount
+    /// This causes getUserDeposit to return a higher sDAIAmount than the contract actually holds
+    function test_Regression_WithdrawFullBalanceAfterHarvest() public {
+        // Lower threshold for testing
+        manager.setMinYieldThreshold(1e18);
+
+        // Alice deposits 100 sDAI at 1:1 rate
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        // Verify initial state
+        PostageYieldManagerUpgradeable.Deposit memory depositBefore = manager.getUserDeposit(alice, 0);
+        assertEq(depositBefore.sDAIAmount, 100e18, "Initial deposit should be 100 sDAI");
+        assertEq(depositBefore.principalDAI, 100e18, "Initial principal should be 100 DAI");
+        assertEq(manager.totalSDAI(), 100e18, "Total sDAI should be 100");
+
+        // Generate yield: rate increases to 1.05
+        sdai.setExchangeRate(1.05e18);
+
+        // Verify yield is available
+        uint256 totalYield = manager.previewYield();
+        assertEq(totalYield, 5e18, "Should have 5 DAI of yield");
+
+        // Fund DEX with BZZ for swap
+        bzz.mint(address(mockPool), 10000e18);
+
+        // Harvest yield
+        manager.harvest();
+
+        // Verify totalSDAI was reduced (yield was redeemed)
+        uint256 totalSDAIAfterHarvest = manager.totalSDAI();
+        console.log("Total sDAI after harvest:", totalSDAIAfterHarvest);
+        assertLt(totalSDAIAfterHarvest, 100e18, "Total sDAI should be reduced after harvest");
+
+        // User deposit should still show 100 sDAI (not yet updated)
+        PostageYieldManagerUpgradeable.Deposit memory depositAfterHarvest = manager.getUserDeposit(alice, 0);
+        console.log("Alice sDAI after harvest:", depositAfterHarvest.sDAIAmount);
+        assertEq(depositAfterHarvest.sDAIAmount, 100e18, "User sDAI unchanged until processBatch");
+
+        // Process the batch to distribute BZZ and update user shares
+        vm.prank(address(0x123));
+        manager.processBatch(10);
+
+        // Get user deposit after processBatch
+        PostageYieldManagerUpgradeable.Deposit memory depositAfterProcess = manager.getUserDeposit(alice, 0);
+        console.log("Alice sDAI after processBatch:", depositAfterProcess.sDAIAmount);
+        console.log("Contract sDAI balance:", sdai.balanceOf(address(manager)));
+
+        // The bug: If depositYieldShares > dep.sDAIAmount due to rounding,
+        // processBatch skips the subtraction, leaving user with inflated balance
+
+        // Check if there's a mismatch between user's deposit and contract balance
+        uint256 contractBalance = sdai.balanceOf(address(manager));
+        if (depositAfterProcess.sDAIAmount > contractBalance) {
+            console.log("BUG DETECTED: User deposit (%e) > Contract balance (%e)",
+                depositAfterProcess.sDAIAmount, contractBalance);
+        }
+
+        // Try to withdraw the full amount shown in getUserDeposit
+        // This should succeed if accounting is correct
+        vm.startPrank(alice);
+        uint256 amountToWithdraw = depositAfterProcess.sDAIAmount;
+        uint256 aliceBalanceBefore = sdai.balanceOf(alice);
+
+        // This withdrawal should work, but will fail if there's an accounting bug
+        manager.withdraw(0, amountToWithdraw);
+        vm.stopPrank();
+
+        // Verify withdrawal succeeded
+        PostageYieldManagerUpgradeable.Deposit memory depositAfterWithdraw = manager.getUserDeposit(alice, 0);
+        assertEq(depositAfterWithdraw.sDAIAmount, 0, "Should have withdrawn all sDAI");
+        assertEq(sdai.balanceOf(alice), aliceBalanceBefore + amountToWithdraw, "Alice should receive withdrawn amount");
+
+        // Verify contract balance has at most minimal dust from rounding up
+        assertLt(sdai.balanceOf(address(manager)), 1000, "Contract should have at most minimal dust after full withdrawal");
+    }
+
+    /// @notice REGRESSION TEST: Multiple harvests with odd amounts can cause rounding mismatches
+    /// This test creates a scenario with multiple users and multiple harvest cycles
+    /// to trigger accumulating rounding errors
+    function test_Regression_MultipleHarvestsRoundingError() public {
+        // Lower threshold for testing
+        manager.setMinYieldThreshold(0.01e18);
+
+        // Alice deposits 204.269366980327606381 sDAI (the exact amount from the bug report)
+        uint256 aliceDeposit = 204269366980327606381;
+        vm.startPrank(alice);
+        sdai.approve(address(manager), aliceDeposit);
+        manager.deposit(aliceDeposit, STAMP_ALICE);
+        vm.stopPrank();
+
+        // Bob deposits a different amount
+        uint256 bobDeposit = 333e18;
+        vm.startPrank(bob);
+        sdai.approve(address(manager), bobDeposit);
+        manager.deposit(bobDeposit, STAMP_BOB);
+        vm.stopPrank();
+
+        // Fund DEX with BZZ
+        bzz.mint(address(mockPool), 100000e18);
+
+        // Do multiple harvest cycles with odd exchange rates
+        uint256[5] memory rates = [uint256(1.0234e18), 1.0567e18, 1.0891e18, 1.1234e18, 1.1567e18];
+
+        for (uint256 i = 0; i < rates.length; i++) {
+            sdai.setExchangeRate(rates[i]);
+
+            uint256 totalYield = manager.previewYield();
+            if (totalYield >= manager.minYieldThreshold()) {
+                manager.harvest();
+
+                // Process batch
+                vm.prank(address(0x123));
+                manager.processBatch(10);
+            }
+        }
+
+        // Get final state
+        PostageYieldManagerUpgradeable.Deposit memory aliceFinal = manager.getUserDeposit(alice, 0);
+        PostageYieldManagerUpgradeable.Deposit memory bobFinal = manager.getUserDeposit(bob, 0);
+        uint256 contractBalance = sdai.balanceOf(address(manager));
+        uint256 totalSDAI = manager.totalSDAI();
+
+        console.log("Alice final sDAI:", aliceFinal.sDAIAmount);
+        console.log("Bob final sDAI:", bobFinal.sDAIAmount);
+        console.log("Sum of deposits:", aliceFinal.sDAIAmount + bobFinal.sDAIAmount);
+        console.log("Contract balance:", contractBalance);
+        console.log("totalSDAI:", totalSDAI);
+
+        // With "round UP for yield shares", sum of deposits will be slightly LESS than contract balance
+        // This is expected - dust accumulates in the contract, but users can withdraw their full balances
+        uint256 sumOfDeposits = aliceFinal.sDAIAmount + bobFinal.sDAIAmount;
+        uint256 dustAmount = contractBalance > sumOfDeposits ? contractBalance - sumOfDeposits : 0;
+
+        // Dust should be minimal (less than 1000 wei is acceptable for multiple harvests)
+        assertLt(dustAmount, 1000, "Dust should be minimal");
+        console.log("Dust amount (expected with round-up):", dustAmount);
+        console.log("Contract has MORE than deposits:", contractBalance > sumOfDeposits);
+
+        // Try to withdraw Alice's full balance - should work cleanly
+        vm.startPrank(alice);
+        uint256 aliceWithdrawAmount = aliceFinal.sDAIAmount;
+        manager.withdraw(0, aliceWithdrawAmount);
+        vm.stopPrank();
+
+        // Verify Alice withdrew successfully
+        PostageYieldManagerUpgradeable.Deposit memory aliceAfter = manager.getUserDeposit(alice, 0);
+        assertEq(aliceAfter.sDAIAmount, 0, "Alice should have zero sDAI after withdrawal");
+
+        // Bob should also be able to withdraw his full balance cleanly
+        vm.startPrank(bob);
+        uint256 bobWithdrawAmount = bobFinal.sDAIAmount;
+        manager.withdraw(0, bobWithdrawAmount);
+        vm.stopPrank();
+
+        // Verify Bob withdrew successfully - full balance withdrawn
+        PostageYieldManagerUpgradeable.Deposit memory bobAfter = manager.getUserDeposit(bob, 0);
+        assertEq(bobAfter.sDAIAmount, 0, "Bob should have zero sDAI after withdrawal");
+
+        // Contract should have some dust remaining (from rounding up)
+        uint256 finalContractBalance = sdai.balanceOf(address(manager));
+        assertLt(finalContractBalance, 1000, "Contract should have minimal dust remaining");
+        assertLt(manager.totalSDAI(), 1000, "totalSDAI should be minimal dust");
     }
 }
