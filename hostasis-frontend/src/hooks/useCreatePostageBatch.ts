@@ -24,20 +24,61 @@ interface UseCreatePostageBatchReturn {
   error: Error | null;
 }
 
-// Calculate required depth for given file size
-export function calculateDepthForSize(sizeInBytes: number): number {
-  // Each chunk is 4096 bytes
-  // Number of chunks = 2^depth
-  // Total capacity = 4096 * 2^depth bytes
+/**
+ * Effective storage capacity by batch depth (in bytes)
+ *
+ * Note: These are EFFECTIVE capacities, not theoretical maximums.
+ * Swarm uses a bucket system (2^16 buckets) where chunks are distributed via hashing.
+ * A batch becomes full when ANY single bucket reaches capacity (birthday paradox).
+ *
+ * Theoretical capacity = 2^depth × 4KB, but actual usable capacity is much lower
+ * at small depths due to bucket saturation. For example:
+ * - Depth 18: Theoretical 1 GB, Effective 6.66 MB (0.61% utilization)
+ * - Depth 24: Theoretical 68.72 GB, Effective 47.06 GB (68.48% utilization)
+ *
+ * Source: Official Swarm documentation - Unencrypted, no erasure coding
+ * https://docs.ethswarm.org/docs/concepts/incentives/postage-stamps/
+ */
+export const EFFECTIVE_CAPACITY_BYTES: Record<number, number> = {
+  18: 6.66 * 1024 * 1024,              // 6.66 MB (0.61% utilization)
+  19: 112.06 * 1024 * 1024,            // 112 MB (5.09% utilization)
+  20: 687.62 * 1024 * 1024,            // 688 MB (15.65% utilization)
+  21: 2.60 * 1024 * 1024 * 1024,       // 2.60 GB (30.27% utilization)
+  22: 7.73 * 1024 * 1024 * 1024,       // 7.73 GB (44.99% utilization)
+  23: 19.94 * 1024 * 1024 * 1024,      // 19.94 GB (58.03% utilization)
+  24: 47.06 * 1024 * 1024 * 1024,      // 47.06 GB (68.48% utilization)
+  25: 105.51 * 1024 * 1024 * 1024,     // 105.51 GB (76.77% utilization)
+  26: 227.98 * 1024 * 1024 * 1024,     // 227.98 GB (82.94% utilization)
+  27: 476.68 * 1024 * 1024 * 1024,     // 476.68 GB (86.71% utilization)
+};
 
-  // Add 20% buffer for metadata
+/**
+ * Calculate required batch depth for a given file size.
+ * Uses effective capacity (not theoretical) to account for bucket saturation.
+ *
+ * @param sizeInBytes - File size in bytes
+ * @returns Minimum depth that can accommodate the file
+ */
+export function calculateDepthForSize(sizeInBytes: number): number {
+  // Add 20% buffer for metadata overhead
   const bufferedSize = sizeInBytes * 1.2;
+
+  // Find the minimum depth where effective capacity >= buffered file size
+  const supportedDepths = Object.keys(EFFECTIVE_CAPACITY_BYTES)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  for (const depth of supportedDepths) {
+    if (EFFECTIVE_CAPACITY_BYTES[depth] >= bufferedSize) {
+      return depth;
+    }
+  }
+
+  // If file is larger than depth 27, fall back to theoretical calculation
+  // (for very large files, effective capacity approaches theoretical)
   const requiredChunks = Math.ceil(bufferedSize / 4096);
   const depth = Math.ceil(Math.log2(requiredChunks));
-
-  // Minimum depth is 17 (practical minimum)
-  // Maximum depth is 31
-  return Math.max(17, Math.min(31, depth));
+  return Math.max(27, Math.min(31, depth));
 }
 
 // Calculate initial balance per chunk for desired TTL

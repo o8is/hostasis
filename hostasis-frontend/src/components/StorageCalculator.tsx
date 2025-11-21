@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useStorageCalculator } from '../hooks/useStorageCalculator';
+import { getPlanTierName } from '../utils/storagePlan';
 
 const StorageCalculator: React.FC = () => {
-  const [storageAmount, setStorageAmount] = useState<string>('1');
+  const [storageAmount, setStorageAmount] = useState<string>('50');
+  const [storageUnit, setStorageUnit] = useState<'MB' | 'GB'>('MB');
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   const {
@@ -16,9 +18,11 @@ const StorageCalculator: React.FC = () => {
   } = useStorageCalculator();
 
   const calculations = useMemo(() => {
-    const storage = parseFloat(storageAmount);
-    return calculate(storage);
-  }, [storageAmount, calculate]);
+    const amount = parseFloat(storageAmount);
+    // Convert to GB for calculation
+    const storageGB = storageUnit === 'MB' ? amount / 1024 : amount;
+    return calculate(storageGB);
+  }, [storageAmount, storageUnit, calculate]);
 
   return (
     <div className="storage-calculator">
@@ -42,10 +46,17 @@ const StorageCalculator: React.FC = () => {
               onChange={(e) => setStorageAmount(e.target.value)}
               className="calculator-input"
               min="0"
-              step="1"
-              placeholder="10"
+              step={storageUnit === 'MB' ? '100' : '1'}
+              placeholder={storageUnit === 'MB' ? '500' : '10'}
             />
-            <span className="calculator-unit">GB</span>
+            <select
+              value={storageUnit}
+              onChange={(e) => setStorageUnit(e.target.value as 'MB' | 'GB')}
+              className="calculator-unit-select"
+            >
+              <option value="MB">MB</option>
+              <option value="GB">GB</option>
+            </select>
           </div>
         </div>
 
@@ -72,9 +83,25 @@ const StorageCalculator: React.FC = () => {
                 <span className="cost-value">{calculations.initialStampCost.toFixed(2)} DAI</span>
               </div>
               <div className="cost-breakdown-item">
-                <span className="cost-label">Reserve Deposit</span>
+                <span className="cost-label">
+                  Reserve Deposit
+                  <span className="recoverable-badge">100% Recoverable</span>
+                </span>
                 <span className="cost-dots"></span>
                 <span className="cost-value">{calculations.recommendedReserve.toFixed(2)} DAI</span>
+              </div>
+              {calculations.depth && getPlanTierName(calculations.depth) && (
+                <div className="cost-breakdown-item">
+                  <span className="cost-label">Storage Plan</span>
+                  <span className="cost-dots"></span>
+                  <span className="cost-value">{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                </div>
+              )}
+            </div>
+
+            <div className="reserve-info-callout">
+              <div className="reserve-info-text">
+                <strong>Your reserve is fully yours.</strong> Withdraw 100% anytime. The only cost is foregone yield while your storage is active.
               </div>
             </div>
 
@@ -133,10 +160,13 @@ const StorageCalculator: React.FC = () => {
                   <div className="safety-buffer-highlight">
                     <div className="buffer-multiplier">{bufferFactors.combinedBuffer.toFixed(1)}x</div>
                   </div>
+                  <div className="buffer-description">
+                    <strong>Protects against:</strong>
+                  </div>
                   <ul className="buffer-protections">
-                    <li>BZZ price increases up to 5x</li>
+                    {/* <li>BZZ price increases up to 5x</li> */}
                     <li>Storage costs doubling (2x)</li>
-                    <li>Yield rates dropping by 40%</li>
+                    <li>Yield rates dropping by 30%</li>
                   </ul>
                 </div>
               </div>

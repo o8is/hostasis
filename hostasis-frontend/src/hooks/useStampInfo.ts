@@ -1,6 +1,7 @@
 import { useReadContract } from 'wagmi';
 import { POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
+import { EFFECTIVE_CAPACITY_BYTES } from './useCreatePostageBatch';
 
 export interface StampInfo {
   // On-chain data
@@ -63,15 +64,19 @@ export function useStampInfo(batchId: string | undefined): StampInfo {
   // Calculate derived values
   const depthNum = depth ? Number(depth) : 0;
   const capacity = depthNum > 0 ? Math.pow(2, depthNum) : 0;
-  const storageCapacityBytes = capacity * CHUNK_SIZE;
+
+  // Use effective capacity if available in lookup table, otherwise fall back to theoretical
+  const storageCapacityBytes = depthNum > 0 && EFFECTIVE_CAPACITY_BYTES[depthNum]
+    ? EFFECTIVE_CAPACITY_BYTES[depthNum]
+    : capacity * CHUNK_SIZE;
 
   // Calculate time remaining
   // Note: remainingBalance is the "normalized balance" (balance per chunk)
   // Formula: blocks remaining = remainingBalance / currentPrice
   let timeRemainingSeconds: number | null = null;
   if (remainingBalance && currentPrice) {
-    const balanceBigInt = BigInt(remainingBalance);
-    const priceBigInt = BigInt(currentPrice);
+    const balanceBigInt = BigInt(remainingBalance as bigint);
+    const priceBigInt = BigInt(currentPrice as bigint);
 
     if (priceBigInt > 0n) {
       // Calculate blocks remaining
@@ -93,9 +98,9 @@ export function useStampInfo(batchId: string | undefined): StampInfo {
   const isLoading = isLoadingBalance || isLoadingDepth || isLoadingPrice;
 
   return {
-    remainingBalance: remainingBalance ? BigInt(remainingBalance) : 0n,
+    remainingBalance: remainingBalance ? BigInt(remainingBalance as bigint) : 0n,
     depth: depthNum,
-    currentPrice: currentPrice ? BigInt(currentPrice) : 0n,
+    currentPrice: currentPrice ? BigInt(currentPrice as bigint) : 0n,
     capacity,
     timeRemainingSeconds,
     storageCapacityBytes,

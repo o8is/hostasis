@@ -15,6 +15,7 @@ import { usePasskeyBatchCreation } from '../hooks/usePasskeyBatchCreation';
 import { useStampedUpload } from '../hooks/useStampedUpload';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
+import { getPlanTierName } from '../utils/storagePlan';
 
 type UploadStep = 'drop' | 'review' | 'passkey' | 'swap' | 'gas-transfer' | 'create-batch' | 'upload' | 'complete';
 
@@ -410,6 +411,13 @@ const Upload: NextPage = () => {
                   <span>Recommended Reserve</span>
                   <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
                 </div>
+
+                {calculations.depth && getPlanTierName(calculations.depth) && (
+                  <div className="cost-line">
+                    <span>Storage Plan</span>
+                    <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                  </div>
+                )}
 
                 <div className="cost-line total">
                   <span>Total xDAI Needed</span>

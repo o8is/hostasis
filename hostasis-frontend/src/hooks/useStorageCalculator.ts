@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useSparkAPYWithFallback } from './useSparkAPY';
 import { useSwarmPricingWithFallback } from './useSwarmPricing';
-import { calculateDepthForSize, calculateBalanceForTTL, calculateTotalBZZ } from './useCreatePostageBatch';
+import { calculateDepthForSize, calculateBalanceForTTL, calculateTotalBZZ, EFFECTIVE_CAPACITY_BYTES } from './useCreatePostageBatch';
 import { formatBZZ } from '../utils/bzzFormat';
 
 export interface StorageCalculation {
@@ -57,13 +57,13 @@ export function useStorageCalculator(): StorageCalculatorResult {
   // Multi-factor buffer calculation for long-term protection
   const bufferFactors = useMemo<BufferFactors>(() => {
     // Factor 1: BZZ price volatility buffer (assume 5x potential increase)
-    const bzzPriceBuffer = 5.0;
+    const bzzPriceBuffer = 1;
 
     // Factor 2: Network storage cost increase (assume 2x potential increase)
     const storagePriceBuffer = 2.0;
 
     // Factor 3: APY decline protection (assume APY could drop to 60% of current)
-    const yieldDeclineBuffer = 1 / 0.6; // ~1.67x
+    const yieldDeclineBuffer = 1 / 0.7; // ~1.67x
 
     // Combined buffer: accounts for all risks happening together
     // We use geometric mean to avoid over-buffering while staying safe
@@ -84,9 +84,6 @@ export function useStorageCalculator(): StorageCalculatorResult {
     return (storageGB: number, fileSizeBytes?: number): StorageCalculation | null => {
       if (isNaN(storageGB) || storageGB <= 0 || !pricePerGBPerYearDAI) return null;
 
-      // Swarm minimum batch depth: 17 (512 MB capacity)
-      const MINIMUM_DEPTH = 17;
-
       let yearlyStorageCost = storageGB * pricePerGBPerYearDAI;
       let initialStampCost: number;
 
@@ -105,20 +102,22 @@ export function useStorageCalculator(): StorageCalculatorResult {
         initialStampCost = totalBzzFloat * bzzPriceUSD;
 
         // Calculate implied price per GB per year from on-chain pricing
-        // This is the actual price you're paying, use it for reserve calculation
-        const batchCapacityGB = (Math.pow(2, depth) * 4096) / (1024 * 1024 * 1024);
+        // Use EFFECTIVE capacity (not theoretical) since you pay for the full effective capacity
+        const batchCapacityBytes = EFFECTIVE_CAPACITY_BYTES[depth] || (Math.pow(2, depth) * 4096);
+        const batchCapacityGB = batchCapacityBytes / (1024 * 1024 * 1024);
         const impliedPricePerGBPerYear = (initialStampCost / batchCapacityGB) * (365 / 7);
 
-        // Use on-chain pricing for reserve calculation (actual usage, not batch capacity)
-        yearlyStorageCost = storageGB * impliedPricePerGBPerYear;
+        // Reserve must cover the FULL batch capacity cost (not just file size)
+        // You pay for the entire batch, regardless of how much you use
+        yearlyStorageCost = batchCapacityGB * impliedPricePerGBPerYear;
       } else if (currentPricePerChunk && bzzPriceUSD) {
         // When we don't have exact file size, estimate from storage GB
         // Convert GB to bytes and calculate appropriate depth
         const estimatedBytes = Math.round(storageGB * 1024 * 1024 * 1024);
         depth = calculateDepthForSize(estimatedBytes);
 
-        // Ensure minimum depth of 17
-        depth = Math.max(depth, MINIMUM_DEPTH);
+        // Ensure minimum depth of 18 (our supported minimum)
+        depth = Math.max(depth, 18);
 
         balancePerChunk = calculateBalanceForTTL(7, currentPricePerChunk);
         totalBzzNeeded = calculateTotalBZZ(balancePerChunk, depth);
@@ -127,10 +126,13 @@ export function useStorageCalculator(): StorageCalculatorResult {
         const totalBzzFloat = parseFloat(formatBZZ(totalBzzNeeded));
         initialStampCost = totalBzzFloat * bzzPriceUSD;
 
-        // For reserve calculation, use the ACTUAL storage amount requested, not the batch size
-        const batchCapacityGB = (Math.pow(2, depth) * 4096) / (1024 * 1024 * 1024);
+        // Use EFFECTIVE capacity (not theoretical) for cost per GB calculation
+        const batchCapacityBytes = EFFECTIVE_CAPACITY_BYTES[depth] || (Math.pow(2, depth) * 4096);
+        const batchCapacityGB = batchCapacityBytes / (1024 * 1024 * 1024);
         const impliedPricePerGBPerYear = (initialStampCost / batchCapacityGB) * (365 / 7);
-        yearlyStorageCost = storageGB * impliedPricePerGBPerYear;
+
+        // Reserve must cover the FULL batch capacity cost
+        yearlyStorageCost = batchCapacityGB * impliedPricePerGBPerYear;
       } else {
         // Fallback: estimate from yearly cost (no pricing data available)
         initialStampCost = yearlyStorageCost * (7 / 365);
