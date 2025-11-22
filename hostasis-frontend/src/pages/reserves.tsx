@@ -69,7 +69,7 @@ const ReservesPage: NextPage = () => {
 
       <Navigation />
 
-      <div className="container" style={{ marginTop: '3rem' }}>
+      <div className="container reserves-container">
         {!isConnected ? (
           <div className="info-box" style={{ textAlign: 'center', maxWidth: '500px', margin: '4rem auto' }}>
             <h3 style={{ marginTop: 0 }}>Connect Your Wallet</h3>
@@ -81,7 +81,7 @@ const ReservesPage: NextPage = () => {
         ) : count === 0 ? (
           <EmptyReservesState onCreateClick={() => setShowCreateModal(true)} initialAmount={initialAmount} />
         ) : (
-          <>
+          <div>
             <div className="reserves-header">
               <h1>Your Reserves</h1>
               <button className="create-reserve-button" onClick={() => setShowCreateModal(true)}>
@@ -89,7 +89,7 @@ const ReservesPage: NextPage = () => {
               </button>
             </div>
             <DepositsList key={refreshKey} />
-          </>
+          </div>
         )}
       </div>
 

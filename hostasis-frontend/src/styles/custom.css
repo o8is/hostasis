@@ -377,10 +377,28 @@ h4 {
 }
 
 /* Enhance deposits grid */
+.reserves-container {
+  width: 100%;
+  max-width: 800px;
+  /* Force the parent flex container to expand on desktop */
+  min-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 840px) {
+  .reserves-container {
+    min-width: auto;
+    padding: 0 1rem;
+  }
+}
+
 .deposits-grid {
-  display: grid;
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
   margin-top: 1.5rem;
+  width: 100%;
 }
 
 /* Modal backdrop enhancement */
@@ -397,6 +415,8 @@ h4 {
 
 /* Deposit card specific styling */
 .deposit-card {
+  width: 100%;
+  max-width: none;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
