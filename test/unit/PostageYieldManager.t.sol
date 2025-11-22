@@ -803,7 +803,7 @@ contract PostageYieldManagerTest is Test {
 
         (uint256 totalBZZAfter1,,,,,) = manager.distributionState();
         bool active1;
-        (,,,,,active1) = manager.distributionState();
+        (,,,,, active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
 
         // Attempt second harvest - should revert
@@ -821,7 +821,7 @@ contract PostageYieldManagerTest is Test {
 
         (uint256 totalBZZAfter2,,,,,) = manager.distributionState();
         bool active2;
-        (,,,,,active2) = manager.distributionState();
+        (,,,,, active2) = manager.distributionState();
         assertTrue(active2, "Distribution should be active after second harvest");
     }
 
@@ -932,8 +932,11 @@ contract PostageYieldManagerTest is Test {
         // Check if there's a mismatch between user's deposit and contract balance
         uint256 contractBalance = sdai.balanceOf(address(manager));
         if (depositAfterProcess.sDAIAmount > contractBalance) {
-            console.log("BUG DETECTED: User deposit (%e) > Contract balance (%e)",
-                depositAfterProcess.sDAIAmount, contractBalance);
+            console.log(
+                "BUG DETECTED: User deposit (%e) > Contract balance (%e)",
+                depositAfterProcess.sDAIAmount,
+                contractBalance
+            );
         }
 
         // Try to withdraw the full amount shown in getUserDeposit
@@ -952,7 +955,9 @@ contract PostageYieldManagerTest is Test {
         assertEq(sdai.balanceOf(alice), aliceBalanceBefore + amountToWithdraw, "Alice should receive withdrawn amount");
 
         // Verify contract balance has at most minimal dust from rounding up
-        assertLt(sdai.balanceOf(address(manager)), 1000, "Contract should have at most minimal dust after full withdrawal");
+        assertLt(
+            sdai.balanceOf(address(manager)), 1000, "Contract should have at most minimal dust after full withdrawal"
+        );
     }
 
     /// @notice REGRESSION TEST: Multiple harvests with odd amounts can cause rounding mismatches

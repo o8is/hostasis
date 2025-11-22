@@ -88,11 +88,7 @@ contract PostageYieldManagerInvariantTest is StdInvariant, Test {
         uint256 contractBalance = sdai.balanceOf(address(manager));
         uint256 totalDeposits = manager.totalSDAI();
 
-        assertGe(
-            contractBalance,
-            totalDeposits,
-            "Contract balance must be >= totalSDAI (solvency)"
-        );
+        assertGe(contractBalance, totalDeposits, "Contract balance must be >= totalSDAI (solvency)");
     }
 
     /// @notice Invariant 2: Dust (excess balance) must be non-negative
@@ -100,10 +96,10 @@ contract PostageYieldManagerInvariantTest is StdInvariant, Test {
     function invariant_dustIsNonNegative() public view {
         uint256 contractBalance = sdai.balanceOf(address(manager));
         uint256 totalDeposits = manager.totalSDAI();
-        
+
         // This should never underflow due to invariant_contractBalanceCoversDeposits
         uint256 dust = contractBalance - totalDeposits;
-        
+
         assertGe(dust, 0, "Dust must be non-negative");
     }
 
@@ -122,18 +118,14 @@ contract PostageYieldManagerInvariantTest is StdInvariant, Test {
         } else {
             diff = sumOfDeposits - totalSDAI;
         }
-        
+
         // Allow up to 1 wei per depositor per harvest as rounding tolerance
         // This accounts for ceiling rounding in yield distribution
         uint256 numHarvests = handler.harvestCount();
         uint256 maxDeposits = handler.depositCount(); // Upper bound on depositors
         uint256 maxDiff = (numHarvests + 1) * (maxDeposits + 1); // Conservative bound
-        
-        assertLe(
-            diff,
-            maxDiff,
-            "Accounting difference exceeds rounding tolerance"
-        );
+
+        assertLe(diff, maxDiff, "Accounting difference exceeds rounding tolerance");
     }
 
     /// @notice Invariant 4: Dust accumulation is bounded per Theorem 2
@@ -150,11 +142,7 @@ contract PostageYieldManagerInvariantTest is StdInvariant, Test {
         // Adding some buffer for edge cases
         uint256 maxExpectedDust = numHarvests * maxActiveDepositors;
 
-        assertLe(
-            dust,
-            maxExpectedDust,
-            "Dust accumulation must be bounded by harvest count * depositors"
-        );
+        assertLe(dust, maxExpectedDust, "Dust accumulation must be bounded by harvest count * depositors");
     }
 
     /// @notice Invariant 5: Total principal DAI conservation
@@ -163,21 +151,14 @@ contract PostageYieldManagerInvariantTest is StdInvariant, Test {
         uint256 sumOfPrincipals = handler.sumOfAllPrincipals();
         uint256 totalPrincipal = manager.totalPrincipalDAI();
 
-        assertEq(
-            sumOfPrincipals,
-            totalPrincipal,
-            "Sum of individual principals must equal totalPrincipalDAI"
-        );
+        assertEq(sumOfPrincipals, totalPrincipal, "Sum of individual principals must equal totalPrincipalDAI");
     }
 
     /// @notice Invariant 6: No negative deposits
     /// @dev All tracked deposits should have non-negative sDAI amounts
     function invariant_noNegativeDeposits() public view {
         // Handler tracks all deposits and verifies none are negative
-        assertTrue(
-            handler.allDepositsNonNegative(),
-            "All deposits must have non-negative sDAI amounts"
-        );
+        assertTrue(handler.allDepositsNonNegative(), "All deposits must have non-negative sDAI amounts");
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -221,7 +202,7 @@ contract InvariantHandler is Test {
     mapping(address => bool) public isActor;
     mapping(address => bytes32) public actorStamp;
     mapping(address => uint256[]) public actorDepositIndices;
-    
+
     uint256 private constant MAX_ACTORS = 10;
     uint256 private constant MIN_DEPOSIT = 1e18;
     uint256 private constant MAX_DEPOSIT = 1000e18;
@@ -246,7 +227,7 @@ contract InvariantHandler is Test {
     function deposit(uint256 actorSeed, uint256 amount) public {
         // Get or create actor
         address actor = _getOrCreateActor(actorSeed);
-        
+
         // Bound amount
         amount = bound(amount, MIN_DEPOSIT, MAX_DEPOSIT);
 
@@ -264,12 +245,12 @@ contract InvariantHandler is Test {
         // Deposit
         vm.startPrank(actor);
         sdai.approve(address(manager), amount);
-        
+
         uint256 depositIdx = manager.getUserDepositCount(actor);
         try manager.deposit(amount, actorStamp[actor]) {
             depositCount++;
             actorDepositIndices[actor].push(depositIdx);
-            
+
             // Track max active depositors
             uint256 activeCount = _countActiveDepositors();
             if (activeCount > maxActiveDepositors) {
@@ -284,7 +265,7 @@ contract InvariantHandler is Test {
     /// @notice Withdraw sDAI from the manager
     function withdraw(uint256 actorSeed, uint256 amountSeed) public {
         if (actors.length == 0) return;
-        
+
         address actor = actors[actorSeed % actors.length];
         uint256[] memory depositIndices = actorDepositIndices[actor];
         if (depositIndices.length == 0) return;
@@ -293,9 +274,7 @@ contract InvariantHandler is Test {
         uint256 depositIdx = depositIndices[actorSeed % depositIndices.length];
 
         // Get deposit info
-        try manager.getUserDeposit(actor, depositIdx) returns (
-            PostageYieldManagerUpgradeable.Deposit memory dep
-        ) {
+        try manager.getUserDeposit(actor, depositIdx) returns (PostageYieldManagerUpgradeable.Deposit memory dep) {
             uint256 sDAIAmount = dep.sDAIAmount;
             if (sDAIAmount == 0) return; // No deposit to withdraw
 
@@ -322,12 +301,12 @@ contract InvariantHandler is Test {
     function generateYield(uint256 yieldPercentage) public {
         // Bound yield between 0.01% and 10%
         yieldPercentage = bound(yieldPercentage, 1, 1000); // 0.01% to 10%
-        
+
         uint256 currentRate = sdai.convertToAssets(1e18);
         uint256 newRate = currentRate + (currentRate * yieldPercentage) / 10000;
-        
+
         sdai.setExchangeRate(newRate);
-        
+
         uint256 yield = (manager.totalSDAI() * yieldPercentage) / 10000;
         totalYieldGenerated += yield;
     }
@@ -338,7 +317,7 @@ contract InvariantHandler is Test {
 
         try manager.harvest() {
             harvestCount++;
-            
+
             // Process distribution
             try manager.processBatch(100) {} catch {}
         } catch {
@@ -365,17 +344,17 @@ contract InvariantHandler is Test {
 
     function _createNewActor(uint256 seed) internal returns (address) {
         address actor = address(uint160(seed));
-        
+
         if (!isActor[actor]) {
             actors.push(actor);
             isActor[actor] = true;
-            
+
             // Create stamp for actor
             bytes32 stampId = bytes32(uint256(uint160(actor)));
             actorStamp[actor] = stampId;
             postageStamp.createBatch(stampId);
         }
-        
+
         return actor;
     }
 

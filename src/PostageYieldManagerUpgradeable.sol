@@ -288,7 +288,8 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         if (sDAIAmount > userDeposit.sDAIAmount) revert InsufficientBalance();
 
         // Calculate proportional DAI value to subtract
-        uint256 daiValueWithdrawn = Math.mulDiv(userDeposit.principalDAI, sDAIAmount, userDeposit.sDAIAmount, Math.Rounding.Floor);
+        uint256 daiValueWithdrawn =
+            Math.mulDiv(userDeposit.principalDAI, sDAIAmount, userDeposit.sDAIAmount, Math.Rounding.Floor);
 
         // Update deposit
         userDeposit.sDAIAmount -= sDAIAmount;
@@ -544,19 +545,17 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                 // Use Ceil rounding to ensure sum(depositYieldShares) >= originalYieldShares
                 // This leaves dust in the contract rather than giving users more than removed
                 uint256 originalYieldShares = state.snapshotTotalSDAI - totalSDAI;
-                uint256 depositYieldShares = Math.mulDiv(
-                    dep.sDAIAmount, 
-                    originalYieldShares,
-                    state.snapshotTotalSDAI, 
-                    Math.Rounding.Ceil
-                );
+                uint256 depositYieldShares =
+                    Math.mulDiv(dep.sDAIAmount, originalYieldShares, state.snapshotTotalSDAI, Math.Rounding.Ceil);
 
                 // Calculate DAI value of this yield for BZZ distribution
                 // We need to know the DAI value to distribute BZZ proportionally based on value, not shares
                 uint256 depositYieldDAI = Math.mulDiv(depositYieldShares, state.snapshotRate, 1e18, Math.Rounding.Floor);
 
                 // Distribute BZZ proportional to DAI value (to prevent yield theft between depositors at different rates)
-                uint256 bzzShare = depositYieldDAI > 0 ? Math.mulDiv(state.totalBZZ, depositYieldDAI, state.totalYieldDAI, Math.Rounding.Floor) : 0;
+                uint256 bzzShare = depositYieldDAI > 0
+                    ? Math.mulDiv(state.totalBZZ, depositYieldDAI, state.totalYieldDAI, Math.Rounding.Floor)
+                    : 0;
 
                 if (bzzShare > 0) {
                     // Get batch depth to calculate per-chunk amount
@@ -585,11 +584,13 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
                 if (depositYieldShares > 0) {
                     // Clamp to deposit amount (safety check)
                     if (depositYieldShares > dep.sDAIAmount) depositYieldShares = dep.sDAIAmount;
-                    
+
                     dep.sDAIAmount -= depositYieldShares;
-                    
+
                     // Track cumulative yield claimed in DAI terms
-                    dep.totalYieldClaimed += Math.mulDiv(depositYieldShares, state.snapshotRate, 1e18, Math.Rounding.Floor);
+                    dep.totalYieldClaimed += Math.mulDiv(
+                        depositYieldShares, state.snapshotRate, 1e18, Math.Rounding.Floor
+                    );
                 }
             }
 

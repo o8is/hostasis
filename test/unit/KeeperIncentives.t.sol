@@ -164,7 +164,7 @@ contract KeeperIncentivesTest is Test {
         manager.harvest();
 
         bool active;
-        (,,,,,active) = manager.distributionState();
+        (,,,,, active) = manager.distributionState();
         assertTrue(active, "Distribution should be active");
     }
 
@@ -194,7 +194,7 @@ contract KeeperIncentivesTest is Test {
         manager.harvest();
 
         // Check distribution is active
-        (uint256 totalBZZ1, , , , , bool active1) = manager.distributionState();
+        (uint256 totalBZZ1,,,,, bool active1) = manager.distributionState();
         assertTrue(active1, "Distribution should be active after first harvest");
         uint256 keeperFeePool1 = manager.keeperFeePool();
         assertGt(keeperFeePool1, 0, "Keeper fee pool should have fees from first harvest");
@@ -215,7 +215,7 @@ contract KeeperIncentivesTest is Test {
 
         // Distribution should now be complete
         bool activeAfter;
-        (,,,,,activeAfter) = manager.distributionState();
+        (,,,,, activeAfter) = manager.distributionState();
         assertFalse(activeAfter, "Distribution should be inactive after processBatch");
 
         // NOW harvest should work again
@@ -229,7 +229,7 @@ contract KeeperIncentivesTest is Test {
         // Verify second distribution is active
         (uint256 totalBZZ2,,,,,) = manager.distributionState();
         bool active2;
-        (,,,,,active2) = manager.distributionState();
+        (,,,,, active2) = manager.distributionState();
         assertTrue(active2, "Distribution should be active after second harvest");
         assertGt(totalBZZ2, 0, "Should have BZZ from second harvest");
     }
@@ -340,7 +340,7 @@ contract KeeperIncentivesTest is Test {
         manager.harvest();
 
         bool activeBefore;
-        (,,,,,activeBefore) = manager.distributionState();
+        (,,,,, activeBefore) = manager.distributionState();
         assertTrue(activeBefore, "Distribution should be active before processing");
 
         // Process all users
@@ -348,7 +348,7 @@ contract KeeperIncentivesTest is Test {
         manager.processBatch(100); // Large batch size to complete
 
         bool activeAfter2;
-        (,,,,,activeAfter2) = manager.distributionState();
+        (,,,,, activeAfter2) = manager.distributionState();
         assertFalse(activeAfter2, "Distribution should be inactive after completion");
     }
 
@@ -519,7 +519,7 @@ contract KeeperIncentivesTest is Test {
 
         (uint256 totalBZZ,,,,,) = manager.distributionState();
         bool active3;
-        (,,,,,active3) = manager.distributionState();
+        (,,,,, active3) = manager.distributionState();
         assertTrue(active3, "Distribution should be active");
         assertGt(totalBZZ, 0, "Should have BZZ to distribute");
 
@@ -543,7 +543,7 @@ contract KeeperIncentivesTest is Test {
 
         // 6. Distribution should be complete
         bool stillActive;
-        (,,,,,stillActive) = manager.distributionState();
+        (,,,,, stillActive) = manager.distributionState();
         assertFalse(stillActive, "Distribution should be complete");
 
         // 7. Verify BZZ was distributed to stamps
@@ -618,7 +618,7 @@ contract KeeperIncentivesTest is Test {
         // Should either complete or make progress
         (, uint256 cursor,,,,) = manager.distributionState();
         bool active;
-        (,,,,,active) = manager.distributionState();
+        (,,,,, active) = manager.distributionState();
 
         if (!active) {
             // Distribution completed - state is deleted, so cursor will be 0
