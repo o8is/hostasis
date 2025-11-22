@@ -70,40 +70,6 @@
   letter-spacing: 0.02em;
 }
 
-/* Navigation Links (for future use) */
-.nav-links {
-  display: flex;
-  gap: 2rem;
-  align-items: center;
-}
-
-.nav-link {
-  color: #b0b0b0;
-  text-decoration: none;
-  font-size: 0.95rem;
-  font-weight: 400;
-  transition: color 0.3s ease;
-  position: relative;
-}
-
-.nav-link:hover {
-  color: #e0e0e0;
-}
-
-.nav-link.active {
-  color: #e0e0e0;
-}
-
-.nav-link.active::after {
-  content: '';
-  position: absolute;
-  bottom: -0.5rem;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 0%, #e0e0e0 50%, transparent 100%);
-}
-
 /* Navigation Menu */
 .nav-menu {
   display: flex;
@@ -347,14 +313,6 @@ h4 {
   border-color: var(--o8-tertiary-dark) !important;
 }
 
-/* Connect button positioning - make it more visible */
-.connect-button-wrapper {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 10;
-}
-
 /* Success/error message styling */
 .success-message {
   color: #51cf66;
@@ -405,12 +363,6 @@ h4 {
 .modal-backdrop {
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
-}
-
-/* Separator enhancement */
-.separator {
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%);
-  margin: 3rem 0 2rem 0;
 }
 
 /* Deposit card specific styling */
@@ -489,18 +441,6 @@ button[style*="background: transparent"]:hover {
   .button-group .view-button {
     width: 100%;
   }
-}
-
-/* Balance display enhancement */
-.balance-display {
-  display: inline-block;
-  padding: 0.25rem 0.75rem;
-  background: rgba(81, 207, 102, 0.1);
-  border: 1px solid rgba(81, 207, 102, 0.2);
-  border-radius: 4px;
-  color: #51cf66;
-  font-weight: 500;
-  font-size: 0.85rem;
 }
 
 /* ===========================================
@@ -591,104 +531,6 @@ button[style*="background: transparent"]:hover {
 }
 
 /* ===========================================
-   CUSTOM CHECKBOX (O8 STYLE)
-   =========================================== */
-
-.checkbox-container {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  padding: 0.75rem 3rem;
-  margin-top: 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  transition: all 0.3s ease;
-  user-select: none;
-}
-
-.checkbox-container:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.checkbox-wrapper {
-  position: absolute;
-  left: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.checkbox-wrapper input[type="checkbox"] {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  width: 20px;
-  height: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  position: relative;
-  flex-shrink: 0;
-  margin: 0;
-}
-
-.checkbox-wrapper input[type="checkbox"]:hover {
-  border-color: rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.checkbox-wrapper input[type="checkbox"]:checked {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.15) 100%);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.checkbox-wrapper input[type="checkbox"]:checked::after {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 2px;
-  width: 5px;
-  height: 9px;
-  border: solid #e0e0e0;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.checkbox-label {
-  color: #e0e0e0;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  text-align: center;
-}
-
-.checkbox-label-main {
-  color: #e0e0e0;
-}
-
-.checkbox-label-description {
-  color: #7a7a7a;
-  font-size: 0.8rem;
-  font-weight: 400;
-}
-
-.checkbox-container:has(input:checked) {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-/* ===========================================
    HERO SECTION
    =========================================== */
 
@@ -723,16 +565,6 @@ button[style*="background: transparent"]:hover {
   color: #b0b0b0;
   line-height: 1.7;
   margin-bottom: 2rem;
-}
-
-.hero-cta {
-  margin-top: 2rem;
-}
-
-.cta-hint {
-  font-size: 1rem;
-  color: #7a7a7a;
-  font-style: italic;
 }
 
 @media (max-width: 768px) {
@@ -1194,8 +1026,7 @@ button[style*="background: transparent"]:hover {
   text-align: center;
 }
 
-.mechanism-section,
-.deposit-section {
+.mechanism-section {
   margin: 3rem 0;
 }
 
@@ -1895,74 +1726,6 @@ button[style*="background: transparent"]:hover {
 }
 
 /* ===========================================
-   MODAL STYLES
-   =========================================== */
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.modal-content {
-  background: #1a1a1a;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  max-width: 600px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  position: relative;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 1.5rem 0 1.5rem;
-}
-
-.modal-header h2 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: #e0e0e0;
-}
-
-.modal-close {
-  background: transparent;
-  border: none;
-  color: #7a7a7a;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0.5rem;
-  line-height: 1;
-  transition: color 0.3s ease;
-}
-
-.modal-close:hover {
-  color: #e0e0e0;
-}
-
-.modal-body {
-  padding: 1.5rem;
-}
-
-.modal-body .info-box {
-  margin-top: 0;
-  background: transparent;
-  border: none;
-  padding: 0;
-}
-
-/* ===========================================
    UPLOAD PAGE STYLES
    =========================================== */
 
@@ -2311,21 +2074,6 @@ button[style*="background: transparent"]:hover {
   margin: 0 0 2rem;
 }
 
-.progress-bar-container {
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 20px;
-  height: 8px;
-  overflow: hidden;
-  margin-bottom: 1rem;
-}
-
-.progress-bar {
-  background: linear-gradient(90deg, var(--o8-tertiary-dark), var(--o8-tertiary));
-  height: 100%;
-  border-radius: 20px;
-  transition: width 0.5s ease;
-}
-
 .upload-error {
   margin-top: 2rem;
   padding: 1rem;
@@ -2401,71 +2149,6 @@ button[style*="background: transparent"]:hover {
   color: #7a7a7a;
   line-height: 1.6;
   margin: 0;
-}
-
-/* Bee Config Modal */
-.bee-config-modal {
-  padding: 0.5rem;
-}
-
-.bee-config-modal h3 {
-  font-size: 1.3rem;
-  color: #e0e0e0;
-  margin: 0 0 1rem;
-}
-
-.bee-config-modal p {
-  color: #8a8a8a;
-  margin: 0 0 1.5rem;
-  line-height: 1.5;
-}
-
-.config-input-group {
-  margin-bottom: 1.5rem;
-}
-
-.config-input-group label {
-  display: block;
-  font-size: 0.9rem;
-  color: #b0b0b0;
-  margin-bottom: 0.5rem;
-}
-
-.config-input-group input {
-  width: 100%;
-  padding: 0.75rem;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: #e0e0e0;
-  font-size: 0.95rem;
-  font-family: monospace;
-}
-
-.config-input-group input:focus {
-  outline: none;
-  border-color: var(--o8-tertiary);
-}
-
-.config-warning {
-  background: rgba(255, 183, 74, 0.1);
-  border: 1px solid rgba(255, 183, 74, 0.3);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
-  font-size: 0.9rem;
-  color: #b0b0b0;
-  line-height: 1.5;
-}
-
-.config-warning strong {
-  color: var(--o8-tertiary);
-}
-
-.config-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
 }
 
 /* Progress Steps */
