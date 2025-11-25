@@ -517,9 +517,6 @@ const Upload: NextPage = () => {
                       Configure as a single-page app (rewrite all urls to /index.html)
                     </span>
                   </label>
-                  <p className={styles.spaHint}>
-                    Enable this for React, Vue, Angular, or other SPA frameworks that handle routing client-side.
-                  </p>
                 </div>
               )}
 
