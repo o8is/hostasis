@@ -15,6 +15,7 @@ export interface UploadMetadata {
   isWebsite?: boolean;
   indexDocument?: string;
   filename?: string; // For single file uploads
+  isSPA?: boolean; // Single Page App mode - all routes rewrite to index.html
 }
 
 export interface UploadRecord {

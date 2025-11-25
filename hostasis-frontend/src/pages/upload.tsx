@@ -16,6 +16,7 @@ import { useStampedUpload } from '../hooks/useStampedUpload';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
 import { getPlanTierName } from '../utils/storagePlan';
+import styles from './upload.module.css';
 
 type UploadStep = 'drop' | 'review' | 'passkey' | 'swap' | 'gas-transfer' | 'create-batch' | 'upload' | 'complete';
 
@@ -25,6 +26,7 @@ interface UploadState {
   step: UploadStep;
   batchId?: string;
   swarmUrl?: string;
+  isSPA?: boolean; // Single Page App mode
 }
 
 const Upload: NextPage = () => {
@@ -33,7 +35,8 @@ const Upload: NextPage = () => {
   const [state, setState] = useState<UploadState>({
     files: [],
     totalSize: 0,
-    step: 'drop'
+    step: 'drop',
+    isSPA: false
   });
 
   const [currentAction, setCurrentAction] = useState('');
@@ -116,7 +119,9 @@ const Upload: NextPage = () => {
           state.files,
           debugBatchId,
           passkeyInfo.privateKey,
-          debugDepth
+          debugDepth,
+          undefined, // gatewayUrl - use default
+          { isSPA: state.isSPA }
         );
 
         setState(prev => ({
@@ -146,7 +151,8 @@ const Upload: NextPage = () => {
           metadata: {
             isWebsite,
             indexDocument,
-            filename
+            filename,
+            isSPA: state.isSPA
           }
         });
 
@@ -260,7 +266,9 @@ const Upload: NextPage = () => {
         state.files,
         normalizedBatchId,
         passkeyInfo.privateKey,
-        calculations.depth
+        calculations.depth,
+        undefined, // gatewayUrl - use default
+        { isSPA: state.isSPA }
       );
 
       // Save upload record for history tracking
@@ -287,7 +295,8 @@ const Upload: NextPage = () => {
         metadata: {
           isWebsite,
           indexDocument,
-          filename
+          filename,
+          isSPA: state.isSPA
         }
       });
 
@@ -309,7 +318,8 @@ const Upload: NextPage = () => {
     setState({
       files: [],
       totalSize: 0,
-      step: 'drop'
+      step: 'drop',
+      isSPA: false
     });
     resetUpload();
     setCurrentAction('');
@@ -328,7 +338,9 @@ const Upload: NextPage = () => {
         state.files,
         normalizedBatchId,
         passkeyWallet.privateKey,
-        calculations.depth
+        calculations.depth,
+        undefined, // gatewayUrl - use default
+        { isSPA: state.isSPA }
       );
 
       // Save upload record for history tracking
@@ -355,7 +367,8 @@ const Upload: NextPage = () => {
         metadata: {
           isWebsite,
           indexDocument,
-          filename
+          filename,
+          isSPA: state.isSPA
         }
       });
 
@@ -405,113 +418,128 @@ const Upload: NextPage = () => {
 
       <Navigation />
 
-      <div className="upload-page">
+      <div className={styles.page}>
         {isDebugMode && (
-          <div style={{
-            background: '#ff6b00',
-            color: 'white',
-            padding: '12px',
-            textAlign: 'center',
-            fontWeight: 'bold',
-            marginBottom: '20px'
-          }}>
+          <div className={styles.debugBanner}>
             🐛 DEBUG MODE: Using existing stamp {debugBatchId?.substring(0, 10)}... (depth {debugDepth})
           </div>
         )}
         
-        <div className="upload-hero">
-          <h1 className="upload-headline">
+        <div className={styles.hero}>
+          <h1 className={styles.headline}>
             Drag &amp; drop. It&apos;s permanent.
           </h1>
-          <p className="upload-subheadline">
+          <p className={styles.subheadline}>
             Drop a folder with your project&apos;s HTML, CSS, and JS files.
             <br />
             We&apos;ll give you permanent decentralized hosting.
           </p>
         </div>
 
-        <div className="upload-container">
+        <div className={styles.container}>
           {state.step === 'drop' && (
             <FileDropZone onFilesDropped={handleFilesDropped} />
           )}
 
           {state.step === 'review' && calculations && (
-            <div className="upload-review">
-              <div className="review-header">
+            <div className={styles.review}>
+              <div className={styles.reviewHeader}>
                 <h2>Ready to Deploy</h2>
                 <p>Review your upload and costs</p>
               </div>
 
-              <div className="review-summary">
-                <div className="review-stat">
-                  <span className="stat-label">Files</span>
-                  <span className="stat-value">{state.files.length}</span>
+              <div className={styles.reviewSummary}>
+                <div className={styles.reviewStat}>
+                  <span className={styles.statLabel}>Files</span>
+                  <span className={styles.statValue}>{state.files.length}</span>
                 </div>
-                <div className="review-stat">
-                  <span className="stat-label">Total Size</span>
-                  <span className="stat-value">{formatFileSize(state.totalSize)}</span>
+                <div className={styles.reviewStat}>
+                  <span className={styles.statLabel}>Total Size</span>
+                  <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
                 </div>
-                <div className="review-stat">
-                  <span className="stat-label">Storage</span>
-                  <span className="stat-value">{formatSmartNumber(storageSizeGB)} GB</span>
+                <div className={styles.reviewStat}>
+                  <span className={styles.statLabel}>Storage</span>
+                  <span className={styles.statValue}>{formatSmartNumber(storageSizeGB)} GB</span>
                 </div>
               </div>
 
-              <div className="review-costs">
+              <div className={styles.reviewCosts}>
                 <h3>Cost Breakdown</h3>
 
                 {calculations.bzzAmount && (
-                  <div className="cost-line">
+                  <div className={styles.costLine}>
                     <span>BZZ for Stamp (7 days)</span>
                     <span>{formatSmartNumber(parseFloat(formatBZZ(calculations.bzzAmount)))} BZZ</span>
                   </div>
                 )}
 
-                <div className="cost-line">
+                <div className={styles.costLine}>
                   <span>Est. xDAI for BZZ Swap</span>
                   <span>{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
                 </div>
 
-                <div className="cost-line">
+                <div className={styles.costLine}>
                   <span>Recommended Reserve</span>
                   <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
                 </div>
 
                 {calculations.depth && getPlanTierName(calculations.depth) && (
-                  <div className="cost-line">
+                  <div className={styles.costLine}>
                     <span>Storage Plan</span>
                     <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
                   </div>
                 )}
 
-                <div className="cost-line total">
+                <div className={`${styles.costLine} ${styles.costLineTotal}`}>
                   <span>Total xDAI Needed</span>
                   <span>{formatSmartNumber(calculations.totalUpfrontCost)} xDAI</span>
                 </div>
 
-                <div className="cost-note">
+                <div className={styles.costNote}>
                   Your reserve generates yield to pay for permanent hosting.
                   No monthly fees, ever.
                 </div>
               </div>
 
+              {/* SPA Option - only show if uploading a website with index.html */}
+              {state.files.some(f => 
+                f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+              ) && (
+                <div className={styles.spaOption}>
+                  <label className={styles.spaCheckboxLabel}>
+                    <input
+                      type="checkbox"
+                      checked={state.isSPA || false}
+                      onChange={(e) => setState(prev => ({ ...prev, isSPA: e.target.checked }))}
+                      className={styles.spaCheckbox}
+                    />
+                    <span className={styles.spaCheckboxText}>
+                      Configure as a single-page app (rewrite all urls to /index.html)
+                    </span>
+                  </label>
+                  <p className={styles.spaHint}>
+                    Enable this for React, Vue, Angular, or other SPA frameworks that handle routing client-side.
+                  </p>
+                </div>
+              )}
+
               {!isConnected ? (
-                <div className="connect-prompt">
+                <div className={styles.connectPrompt}>
                   <p>Connect your wallet to deploy</p>
                   <ConnectButton />
                 </div>
               ) : (
-                <div className="review-actions">
+                <div className={styles.reviewActions}>
                   <button
                     onClick={handleStartDeployment}
-                    className="upload-cta-button"
+                    className={styles.ctaButton}
                     disabled={isProcessing}
                   >
                     {isProcessing ? 'Processing...' : 'Deploy to Swarm'}
                   </button>
                   <button
                     onClick={handleReset}
-                    className="upload-secondary-button"
+                    className={styles.secondaryButton}
                     disabled={isProcessing}
                   >
                     Start Over
@@ -522,45 +550,45 @@ const Upload: NextPage = () => {
           )}
 
           {(state.step === 'passkey' || state.step === 'swap' || state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') && (
-            <div className="upload-progress">
-              <div className="progress-header">
+            <div className={styles.progress}>
+              <div className={styles.progressHeader}>
                 <h2>Deploying...</h2>
                 <p>{currentAction || uploadProgress.message}</p>
               </div>
 
-              <div className="progress-steps">
-                <div className={`progress-step ${state.step === 'passkey' ? 'active' : (state.step === 'swap' || state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') ? 'complete' : ''}`}>
-                  <div className="step-number">1</div>
-                  <div className="step-label">Passkey Auth</div>
+              <div className={styles.progressSteps}>
+                <div className={`${styles.progressStep} ${state.step === 'passkey' ? styles.progressStepActive : (state.step === 'swap' || state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                  <div className={styles.stepNumber}>1</div>
+                  <div className={styles.stepLabel}>Passkey Auth</div>
                 </div>
-                <div className={`progress-step ${state.step === 'swap' ? 'active' : (state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') ? 'complete' : ''}`}>
-                  <div className="step-number">2</div>
-                  <div className="step-label">Swap → Passkey</div>
+                <div className={`${styles.progressStep} ${state.step === 'swap' ? styles.progressStepActive : (state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                  <div className={styles.stepNumber}>2</div>
+                  <div className={styles.stepLabel}>Swap → Passkey</div>
                 </div>
-                <div className={`progress-step ${state.step === 'gas-transfer' ? 'active' : (state.step === 'create-batch' || state.step === 'upload') ? 'complete' : ''}`}>
-                  <div className="step-number">3</div>
-                  <div className="step-label">Send Gas</div>
+                <div className={`${styles.progressStep} ${state.step === 'gas-transfer' ? styles.progressStepActive : (state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                  <div className={styles.stepNumber}>3</div>
+                  <div className={styles.stepLabel}>Send Gas</div>
                 </div>
-                <div className={`progress-step ${state.step === 'create-batch' ? 'active' : state.step === 'upload' ? 'complete' : ''}`}>
-                  <div className="step-number">4</div>
-                  <div className="step-label">Create Stamp</div>
+                <div className={`${styles.progressStep} ${state.step === 'create-batch' ? styles.progressStepActive : state.step === 'upload' ? styles.progressStepComplete : ''}`}>
+                  <div className={styles.stepNumber}>4</div>
+                  <div className={styles.stepLabel}>Create Stamp</div>
                 </div>
-                <div className={`progress-step ${state.step === 'upload' ? 'active' : ''}`}>
-                  <div className="step-number">5</div>
-                  <div className="step-label">Upload Files</div>
+                <div className={`${styles.progressStep} ${state.step === 'upload' ? styles.progressStepActive : ''}`}>
+                  <div className={styles.stepNumber}>5</div>
+                  <div className={styles.stepLabel}>Upload Files</div>
                 </div>
               </div>
 
               {uploadError && (
-                <div className="upload-error">
+                <div className={styles.error}>
                   <p>Error: {uploadError.message}</p>
-                  <div className="error-actions">
+                  <div className={styles.errorActions}>
                     {state.step === 'upload' && state.batchId && (
-                      <button onClick={handleRetryUpload} className="upload-cta-button">
+                      <button onClick={handleRetryUpload} className={styles.ctaButton}>
                         Retry Upload
                       </button>
                     )}
-                    <button onClick={handleReset} className="upload-secondary-button">
+                    <button onClick={handleReset} className={styles.secondaryButton}>
                       Start Over
                     </button>
                   </div>
@@ -570,20 +598,20 @@ const Upload: NextPage = () => {
           )}
 
           {state.step === 'complete' && (
-            <div className="upload-complete">
-              <div className="complete-icon">✓</div>
+            <div className={styles.complete}>
+              <div className={styles.completeIcon}>✓</div>
               <h2>Deployed Successfully!</h2>
               <p>
                 Your files are now on the Swarm network.
               </p>
               {state.swarmUrl && (
-                <div className="complete-actions">
-                  <a href={state.swarmUrl} target="_blank" rel="noopener noreferrer" className="swarm-link">
+                <div className={styles.completeActions}>
+                  <a href={state.swarmUrl} target="_blank" rel="noopener noreferrer" className={styles.swarmLink}>
                     View on Swarm
                   </a>
 
-                  <div className="reserve-prompt">
-                    <p className="reserve-message">
+                  <div className={styles.reservePrompt}>
+                    <p className={styles.reserveMessage}>
                       <strong>Almost done!</strong> Create a reserve to make your upload permanent.
                     </p>
                     <button
@@ -595,7 +623,7 @@ const Upload: NextPage = () => {
                           `/reserves?stampId=${state.batchId}&amount=${recommendedReserve}`
                         );
                       }}
-                      className="create-reserve-button"
+                      className={styles.createReserveButton}
                     >
                       Create Reserve
                     </button>
@@ -606,8 +634,8 @@ const Upload: NextPage = () => {
           )}
         </div>
 
-        <div className="upload-features">
-          <div className="feature-item">
+        <div className={styles.features}>
+          <div className={styles.featureItem}>
             <h3>Put your project online</h3>
             <p>
               Drag and drop your project folder, and your project will be
@@ -615,7 +643,7 @@ const Upload: NextPage = () => {
             </p>
           </div>
 
-          <div className="feature-item">
+          <div className={styles.featureItem}>
             <h3>Fund with yield</h3>
             <p>
               Your reserve deposit earns yield that automatically pays for
@@ -623,7 +651,7 @@ const Upload: NextPage = () => {
             </p>
           </div>
 
-          <div className="feature-item">
+          <div className={styles.featureItem}>
             <h3>Own your hosting</h3>
             <p>
               Censorship-resistant, decentralized storage means your site

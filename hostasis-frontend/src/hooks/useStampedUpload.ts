@@ -20,13 +20,18 @@ export interface UploadResult {
   url: string;
 }
 
+export interface UploadOptions {
+  isSPA?: boolean; // Single Page App mode - sets error document to index.html
+}
+
 export interface UseStampedUploadReturn {
   uploadWithStamper: (
     files: File[],
     batchId: string,
     passkeyPrivateKey: Hex,
     depth: number,
-    gatewayUrl?: string
+    gatewayUrl?: string,
+    options?: UploadOptions
   ) => Promise<UploadResult>;
   progress: UploadProgress;
   error: Error | null;
@@ -263,7 +268,8 @@ export function useStampedUpload(): UseStampedUploadReturn {
     batchId: string,
     passkeyPrivateKey: Hex,
     depth: number,
-    gatewayUrl: string = SWARM_GATEWAY_URL
+    gatewayUrl: string = SWARM_GATEWAY_URL,
+    options: UploadOptions = {}
   ): Promise<UploadResult> => {
     setError(null);
 
@@ -527,19 +533,27 @@ export function useStampedUpload(): UseStampedUploadReturn {
         indexDocument = rootIndex.path.startsWith('/') ? rootIndex.path.slice(1) : rootIndex.path;
       }
 
-      // Find 404 error page (check common patterns)
+      // Find error document. For SPA mode, use index.html so all routes resolve to it
       let errorDocument: string | undefined;
-      const errorPage = fileEntries.find(entry => {
-        const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
-        return (
-          path.toLowerCase() === '404.html' ||
-          path.toLowerCase() === '404/index.html' ||
-          path.toLowerCase() === 'error.html'
-        );
-      });
       
-      if (errorPage) {
-        errorDocument = errorPage.path.startsWith('/') ? errorPage.path.slice(1) : errorPage.path;
+      if (options.isSPA && indexDocument) {
+        // SPA mode: rewrite all URLs to index.html
+        errorDocument = indexDocument;
+        console.log('🚀 SPA mode enabled: all routes will resolve to', indexDocument);
+      } else {
+        // Normal mode: find 404 error page (check common patterns)
+        const errorPage = fileEntries.find(entry => {
+          const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
+          return (
+            path.toLowerCase() === '404.html' ||
+            path.toLowerCase() === '404/index.html' ||
+            path.toLowerCase() === 'error.html'
+          );
+        });
+        
+        if (errorPage) {
+          errorDocument = errorPage.path.startsWith('/') ? errorPage.path.slice(1) : errorPage.path;
+        }
       }
 
       console.log('📋 All file entries:', fileEntries.map(e => e.path));
