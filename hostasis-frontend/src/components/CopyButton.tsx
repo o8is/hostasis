@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import styles from './CopyButton.module.css'
 
 interface CopyButtonProps {
   text: string
@@ -21,7 +22,7 @@ export const CopyButton: React.FC<CopyButtonProps> = ({ text, label = 'Copy' }) 
   return (
     <button
       onClick={handleCopy}
-      className="copy-button"
+      className={styles.copyButton}
       title={copied ? 'Copied!' : `Copy ${label}`}
     >
       {copied ? 'Copied' : 'Copy'}

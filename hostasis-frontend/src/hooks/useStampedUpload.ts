@@ -102,24 +102,33 @@ async function waitForStampPropagation(
 /**
  * Upload data using MerkleTree chunking and return root hash
  * This properly handles files of any size by creating intermediate chunks
+ * Chunks are collected first, then uploaded in true parallel for maximum performance
  */
 async function uploadWithMerkleTree(
   data: Uint8Array,
   uploadChunkFn: (chunk: Chunk) => Promise<string>
 ): Promise<Uint8Array> {
-  // Callback that uploads each chunk as it's created
+  // Collect all chunks first (fast, no I/O)
+  const chunks: Chunk[] = [];
   const onChunk = async (chunk: Chunk) => {
-    await uploadChunkFn(chunk);
+    chunks.push(chunk);
   };
 
-  // Create MerkleTree with upload callback
+  // Create MerkleTree with collection callback
   const tree = new MerkleTree(onChunk);
 
-  // Append data to tree (it will chunk and upload automatically)
+  // Append data to tree (chunks but doesn't upload yet)
   await tree.append(data);
 
   // Finalize and get root chunk
   const rootChunk = await tree.finalize();
+
+  console.log(`📦 File chunked into ${chunks.length} chunks`);
+
+  // Upload ALL chunks in true parallel with Promise.all
+  // Modern browsers use HTTP/2 multiplexing which handles this efficiently
+  // The browser and gateway will manage optimal concurrency automatically
+  await Promise.all(chunks.map(chunk => uploadChunkFn(chunk)));
 
   const rootHash = rootChunk.hash();
 
@@ -179,7 +188,11 @@ async function saveMantarayNodeRecursively(
 /**
  * Build a Swarm mantaray manifest for a collection of files
  */
-async function buildMantarayManifest(fileEntries: { path: string; reference: string; contentType: string }[], indexDocument?: string): Promise<MantarayNode> {
+async function buildMantarayManifest(
+  fileEntries: { path: string; reference: string; contentType: string }[], 
+  indexDocument?: string,
+  errorDocument?: string
+): Promise<MantarayNode> {
   const mantaray = new MantarayNode();
 
   // Add each file as a fork
@@ -204,12 +217,26 @@ async function buildMantarayManifest(fileEntries: { path: string; reference: str
     mantaray.addFork(path, referenceBytes, metadata);
   }
 
-  // Add root path with website metadata if we have an index document
-  if (indexDocument) {
+  // Add root path with website metadata if we have an index and/or error document
+  if (indexDocument || errorDocument) {
     const NULL_ADDRESS = new Uint8Array(32); // 32 bytes of zeros
-    mantaray.addFork('/', NULL_ADDRESS, {
-      'website-index-document': indexDocument
-    });
+    const metadata: Record<string, string> = {};
+    
+    if (indexDocument) {
+      // Remove leading slash from indexDocument to match how paths are stored in manifest
+      const indexDocPath = indexDocument.startsWith('/') ? indexDocument.slice(1) : indexDocument;
+      metadata['website-index-document'] = indexDocPath;
+      console.log('🏠 Setting website index document:', indexDocPath);
+    }
+    
+    if (errorDocument) {
+      // Remove leading slash from errorDocument to match how paths are stored in manifest
+      const errorDocPath = errorDocument.startsWith('/') ? errorDocument.slice(1) : errorDocument;
+      metadata['website-error-document'] = errorDocPath;
+      console.log('❌ Setting website error document:', errorDocPath);
+    }
+    
+    mantaray.addFork('/', NULL_ADDRESS, metadata);
   }
 
   // Return the node (we'll upload it recursively later)
@@ -274,8 +301,18 @@ export function useStampedUpload(): UseStampedUploadReturn {
         percentage: 15
       });
 
+      // Track parallel upload performance
+      let uploadStartTime: number;
+      let chunksUploaded = 0;
+      const totalChunksToUpload: { count: number } = { count: 0 };
+
       // Helper function to upload a chunk with stamping
       const uploadChunk = async (chunk: Chunk): Promise<string> => {
+        if (!uploadStartTime) {
+          uploadStartTime = Date.now();
+          console.log('🚀 Starting parallel chunk uploads...');
+        }
+
         const envelope = stamper.stamp(chunk);
 
         const indexHex = Binary.uint8ArrayToHex(envelope.index);
@@ -286,6 +323,7 @@ export function useStampedUpload(): UseStampedUploadReturn {
         // Use cafe-utility Chunk methods: hash() and build()
         const chunkData = chunk.build();
 
+        const chunkStartTime = Date.now();
         const uploadResponse = await axios.post(
           `${gatewayUrl}/chunks`,
           chunkData,
@@ -296,6 +334,14 @@ export function useStampedUpload(): UseStampedUploadReturn {
             }
           }
         );
+        const chunkDuration = Date.now() - chunkStartTime;
+
+        chunksUploaded++;
+        if (chunksUploaded % 50 === 0 || chunksUploaded === totalChunksToUpload.count) {
+          const elapsed = Date.now() - uploadStartTime;
+          const rate = chunksUploaded / (elapsed / 1000);
+          console.log(`📊 Progress: ${chunksUploaded}/${totalChunksToUpload.count} chunks (${rate.toFixed(1)}/sec, last: ${chunkDuration}ms)`);
+        }
 
         return uploadResponse.data.reference;
       };
@@ -304,7 +350,8 @@ export function useStampedUpload(): UseStampedUploadReturn {
       // This allows /bzz/{reference}/{filename} to work and serve with correct Content-Type
       if (files.length === 1) {
         const file = files[0];
-        const fileName = file.name;
+        // Use webkitRelativePath if available (for folder uploads), otherwise use name
+        const filePath = (file as any).webkitRelativePath || file.name;
 
         setProgress({
           phase: 'uploading',
@@ -324,9 +371,9 @@ export function useStampedUpload(): UseStampedUploadReturn {
         });
 
         const fileEntries = [{
-          path: `/${fileName}`,
+          path: `/${filePath}`,
           reference: fileReference,
-          contentType: getContentType(fileName)
+          contentType: getContentType(filePath)
         }];
 
         const mantarayNode = await buildMantarayManifest(fileEntries);
@@ -341,7 +388,7 @@ export function useStampedUpload(): UseStampedUploadReturn {
         // Convert to CID and use subdomain routing
         const cid = swarmHashToCid(manifestReference);
         const domain = gatewayUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-        const url = `https://${cid}.${domain}/${fileName}`;
+        const url = `https://${cid}.${domain}/${filePath}`;
 
         return {
           reference: manifestReference,
@@ -356,36 +403,148 @@ export function useStampedUpload(): UseStampedUploadReturn {
         percentage: 20
       });
 
-      const fileEntries: { path: string; reference: string; contentType: string }[] = [];
       let indexDocument: string | undefined;
 
-      // Upload each file and collect references
-      for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
-        const file = files[fileIndex];
-        const fileName = file.name;
+      // Determine if we need to strip a common root folder
+      // This happens when uploading a folder via webkitdirectory
+      let rootFolderToStrip = '';
+      const firstFileRelativePath = (files[0] as any).webkitRelativePath;
+      
+      console.log('📁 First file info:', {
+        name: files[0].name,
+        webkitRelativePath: firstFileRelativePath,
+        totalFiles: files.length
+      });
 
-        setProgress({
-          phase: 'uploading',
-          message: `Uploading ${fileName}...`,
-          percentage: 20 + (fileIndex / files.length) * 60
+      if (firstFileRelativePath && firstFileRelativePath.includes('/')) {
+        const potentialRoot = firstFileRelativePath.split('/')[0] + '/';
+        // Check if all files start with this root
+        const allHaveRoot = files.every(f => {
+          const path = (f as any).webkitRelativePath || f.name;
+          return path.startsWith(potentialRoot);
         });
-
-        const fileData = new Uint8Array(await file.arrayBuffer());
-        const rootHash = await uploadWithMerkleTree(fileData, uploadChunk);
-        const fileReference = Binary.uint8ArrayToHex(rootHash);
-
-        // Store file entry for manifest
-        fileEntries.push({
-          path: `/${fileName}`,
-          reference: fileReference,
-          contentType: getContentType(fileName)
-        });
-
-        // Detect index document for website mode
-        if (fileName.toLowerCase() === 'index.html' || fileName.toLowerCase() === 'index.htm') {
-          indexDocument = fileName;
+        if (allHaveRoot) {
+          rootFolderToStrip = potentialRoot;
+          console.log('✂️  Stripping root folder:', rootFolderToStrip);
         }
       }
+
+      // Pre-read all files in parallel (I/O optimization)
+      setProgress({
+        phase: 'chunking',
+        message: `Reading ${files.length} files...`,
+        percentage: 25
+      });
+
+      const fileDataPromises = files.map(file => file.arrayBuffer().then(buf => new Uint8Array(buf)));
+      const allFileData = await Promise.all(fileDataPromises);
+
+      // Chunk ALL files first (CPU-bound, but fast)
+      setProgress({
+        phase: 'chunking',
+        message: `Chunking ${files.length} files...`,
+        percentage: 28
+      });
+
+      interface FileChunkData {
+        filePath: string;
+        chunks: Chunk[];
+        rootHash: Uint8Array;
+      }
+
+      const fileChunkPromises = files.map(async (file, index): Promise<FileChunkData> => {
+        // Use webkitRelativePath if available (for folder uploads), otherwise use name
+        let filePath = (file as any).webkitRelativePath || file.name;
+        const originalPath = filePath;
+        
+        // Strip root folder if detected
+        if (rootFolderToStrip && filePath.startsWith(rootFolderToStrip)) {
+          filePath = filePath.substring(rootFolderToStrip.length);
+        }
+
+        // Log first few files for debugging
+        if (index < 5) {
+          console.log('📄 File path mapping:', {
+            original: originalPath,
+            final: filePath,
+            name: file.name
+          });
+        }
+
+        // Chunk the file without uploading yet
+        const chunks: Chunk[] = [];
+        const onChunk = async (chunk: Chunk) => {
+          chunks.push(chunk);
+        };
+
+        const tree = new MerkleTree(onChunk);
+        await tree.append(allFileData[index]);
+        const rootChunk = await tree.finalize();
+
+        console.log(`📦 ${filePath}: ${chunks.length} chunks`);
+
+        return {
+          filePath,
+          chunks,
+          rootHash: rootChunk.hash()
+        };
+      });
+
+      const allFileChunks = await Promise.all(fileChunkPromises);
+      
+      // Calculate total chunks for progress tracking
+      totalChunksToUpload.count = allFileChunks.reduce((sum, f) => sum + f.chunks.length, 0);
+      console.log(`📊 Total chunks to upload: ${totalChunksToUpload.count}`);
+
+      // Now upload ALL chunks from ALL files in parallel!
+      setProgress({
+        phase: 'uploading',
+        message: `Uploading ${totalChunksToUpload.count} chunks in parallel...`,
+        percentage: 30
+      });
+
+      const allChunkUploads = allFileChunks.flatMap(fileData =>
+        fileData.chunks.map(chunk => uploadChunk(chunk))
+      );
+
+      await Promise.all(allChunkUploads);
+
+      // Build file entries with the root hashes
+      const fileEntries = allFileChunks.map(fileData => ({
+        path: `/${fileData.filePath}`,
+        reference: Binary.uint8ArrayToHex(fileData.rootHash),
+        contentType: getContentType(fileData.filePath)
+      }));
+
+      // Only use root-level index.html or index.htm as the website index
+      // Never use subdirectory index files (like 404/index.html)
+      const rootIndex = fileEntries.find(entry => {
+        const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
+        return (path.toLowerCase() === 'index.html' || path.toLowerCase() === 'index.htm');
+      });
+      
+      if (rootIndex) {
+        indexDocument = rootIndex.path.startsWith('/') ? rootIndex.path.slice(1) : rootIndex.path;
+      }
+
+      // Find 404 error page (check common patterns)
+      let errorDocument: string | undefined;
+      const errorPage = fileEntries.find(entry => {
+        const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
+        return (
+          path.toLowerCase() === '404.html' ||
+          path.toLowerCase() === '404/index.html' ||
+          path.toLowerCase() === 'error.html'
+        );
+      });
+      
+      if (errorPage) {
+        errorDocument = errorPage.path.startsWith('/') ? errorPage.path.slice(1) : errorPage.path;
+      }
+
+      console.log('📋 All file entries:', fileEntries.map(e => e.path));
+      console.log('🏠 Index document detected:', indexDocument);
+      console.log('❌ Error document detected:', errorDocument);
 
       // Build and upload mantaray manifest
       setProgress({
@@ -394,7 +553,7 @@ export function useStampedUpload(): UseStampedUploadReturn {
         percentage: 80
       });
 
-      const mantarayNode = await buildMantarayManifest(fileEntries, indexDocument);
+      const mantarayNode = await buildMantarayManifest(fileEntries, indexDocument, errorDocument);
 
       setProgress({
         phase: 'uploading',

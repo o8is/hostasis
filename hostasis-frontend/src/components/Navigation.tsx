@@ -33,7 +33,7 @@ export default function Navigation() {
               Stats
             </Link>
             <a
-              href="https://github.com/o8-is/hostasis"
+              href="https://github.com/o8-is/hostasis/blob/main/README.md"
               target="_blank"
               rel="noopener noreferrer"
               className="nav-menu-item nav-menu-item--external"
@@ -96,7 +96,7 @@ export default function Navigation() {
             Reserves
           </Link>
           <a
-            href="https://github.com/octalmage/hostasis"
+            href="https://github.com/o8-is/hostasis/blob/main/README.md"
             target="_blank"
             rel="noopener noreferrer"
             className="nav-mobile-item"

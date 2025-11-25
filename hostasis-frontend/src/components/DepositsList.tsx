@@ -7,6 +7,8 @@ import UpdateStampModal from './UpdateStampModal';
 import TopUpModal from './TopUpModal';
 import DepositCard from './DepositCard';
 
+import styles from './DepositsList.module.css';
+
 export default function DepositsList() {
   const { address } = useAccount();
   const [selectedDeposit, setSelectedDeposit] = useState<number | null>(null);
@@ -36,7 +38,7 @@ export default function DepositsList() {
             No reserves yet.
           </p>
         ) : (
-          <div className="deposits-grid">
+          <div className={styles.depositsGrid}>
             {Array.from({ length: count }, (_, i) => count - 1 - i).map((depositIndex) => (
               <DepositCard
                 key={depositIndex}

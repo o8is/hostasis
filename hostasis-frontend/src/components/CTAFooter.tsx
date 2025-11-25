@@ -8,7 +8,7 @@ const CTAFooter: React.FC = () => {
     <div className="cta-footer">
       <div className="cta-footer-content">
         <h2 className="cta-footer-headline">
-          Host your files forever — powered by yield.
+          Host your files forever
         </h2>
         <p className="cta-footer-description">
           No subscriptions. No monthly bills. Just permanent storage.

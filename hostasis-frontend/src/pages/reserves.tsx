@@ -8,6 +8,7 @@ import Navigation from '../components/Navigation';
 import DepositsList from '../components/DepositsList';
 import EmptyReservesState from '../components/EmptyReservesState';
 import CreateReserveModal from '../components/CreateReserveModal';
+import styles from './reserves.module.css';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 
@@ -69,7 +70,7 @@ const ReservesPage: NextPage = () => {
 
       <Navigation />
 
-      <div className="container reserves-container">
+      <div className={`container ${styles.reservesContainer}`}>
         {!isConnected ? (
           <div className="info-box" style={{ textAlign: 'center', maxWidth: '500px', margin: '4rem auto' }}>
             <h3 style={{ marginTop: 0 }}>Connect Your Wallet</h3>
@@ -82,9 +83,9 @@ const ReservesPage: NextPage = () => {
           <EmptyReservesState onCreateClick={() => setShowCreateModal(true)} initialAmount={initialAmount} />
         ) : (
           <div>
-            <div className="reserves-header">
-              <h1>Your Reserves</h1>
-              <button className="create-reserve-button" onClick={() => setShowCreateModal(true)}>
+            <div className={styles.reservesHeader}>
+              <h1>Reserves</h1>
+              <button className={styles.createReserveButton} onClick={() => setShowCreateModal(true)}>
                 + Create Reserve
               </button>
             </div>

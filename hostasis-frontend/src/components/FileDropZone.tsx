@@ -151,7 +151,7 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onFilesDropped, disabled = 
     const files: File[] = [];
     const items = Array.from(dataTransfer.items);
 
-    const readDirectory = async (entry: FileSystemDirectoryEntry): Promise<File[]> => {
+    const readDirectory = async (entry: FileSystemDirectoryEntry, path: string = ''): Promise<File[]> => {
       const dirFiles: File[] = [];
       const reader = entry.createReader();
 
@@ -169,13 +169,27 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onFilesDropped, disabled = 
       } while (batch.length > 0);
 
       for (const childEntry of entries) {
+        const fullPath = path + childEntry.name;
+        
         if (childEntry.isFile) {
           const file = await new Promise<File>((resolve, reject) => {
             (childEntry as FileSystemFileEntry).file(resolve, reject);
           });
-          dirFiles.push(file);
+          
+          // Create a new File with the full path stored in webkitRelativePath
+          const fileWithPath = new File([file], file.name, {
+            type: file.type,
+            lastModified: file.lastModified
+          });
+          // Store the full path (TypeScript doesn't know about this property but browsers support it)
+          Object.defineProperty(fileWithPath, 'webkitRelativePath', {
+            value: fullPath,
+            writable: false
+          });
+          
+          dirFiles.push(fileWithPath);
         } else if (childEntry.isDirectory) {
-          const subFiles = await readDirectory(childEntry as FileSystemDirectoryEntry);
+          const subFiles = await readDirectory(childEntry as FileSystemDirectoryEntry, fullPath + '/');
           dirFiles.push(...subFiles);
         }
       }
@@ -191,7 +205,7 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ onFilesDropped, disabled = 
             const file = item.getAsFile();
             if (file) files.push(file);
           } else if (entry.isDirectory) {
-            const dirFiles = await readDirectory(entry as FileSystemDirectoryEntry);
+            const dirFiles = await readDirectory(entry as FileSystemDirectoryEntry, entry.name + '/');
             files.push(...dirFiles);
           }
         } else {

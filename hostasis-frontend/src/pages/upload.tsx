@@ -38,6 +38,11 @@ const Upload: NextPage = () => {
 
   const [currentAction, setCurrentAction] = useState('');
 
+  // Debug mode: allow reusing existing stamp via ?debugBatchId=xxx&debugDepth=20
+  const debugBatchId = typeof router.query.debugBatchId === 'string' ? router.query.debugBatchId : undefined;
+  const debugDepth = typeof router.query.debugDepth === 'string' ? parseInt(router.query.debugDepth) : 20;
+  const isDebugMode = !!debugBatchId;
+
   const { calculate, bzzPriceUSD } = useStorageCalculator();
   const { getQuote, approveDAI, executeSwap, isApproving: isSwapApproving, isSwapping } = useSwapDAIForBZZ();
 
@@ -100,6 +105,53 @@ const Upload: NextPage = () => {
       }
 
       console.log('Passkey wallet ready:', passkeyInfo.address);
+
+      // DEBUG MODE: Skip swap and stamp creation, go straight to upload with existing stamp
+      if (isDebugMode && debugBatchId) {
+        console.log('🐛 DEBUG MODE: Skipping swap/stamp, using existing stamp', { debugBatchId, debugDepth });
+        setState(prev => ({ ...prev, step: 'upload', batchId: debugBatchId }));
+        setCurrentAction('Uploading with debug stamp...');
+
+        const result = await uploadWithStamper(
+          state.files,
+          debugBatchId,
+          passkeyInfo.privateKey,
+          debugDepth
+        );
+
+        setState(prev => ({
+          ...prev,
+          step: 'complete',
+          swarmUrl: result.url
+        }));
+
+        // Detect if this is a website upload
+        const isWebsite = state.files.some(f =>
+          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+        );
+        const indexDocument = state.files.find(f =>
+          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+        )?.name;
+        const filename = state.files.length === 1 ? state.files[0].name : undefined;
+
+        saveUpload({
+          batchId: debugBatchId,
+          reference: result.reference,
+          files: state.files.map(f => ({
+            name: f.name,
+            size: f.size,
+            type: f.type
+          })),
+          totalSize: state.totalSize,
+          metadata: {
+            isWebsite,
+            indexDocument,
+            filename
+          }
+        });
+
+        return;
+      }
 
       if (!publicClient) {
         throw new Error('Public client not available');
@@ -354,6 +406,19 @@ const Upload: NextPage = () => {
       <Navigation />
 
       <div className="upload-page">
+        {isDebugMode && (
+          <div style={{
+            background: '#ff6b00',
+            color: 'white',
+            padding: '12px',
+            textAlign: 'center',
+            fontWeight: 'bold',
+            marginBottom: '20px'
+          }}>
+            🐛 DEBUG MODE: Using existing stamp {debugBatchId?.substring(0, 10)}... (depth {debugDepth})
+          </div>
+        )}
+        
         <div className="upload-hero">
           <h1 className="upload-headline">
             Drag &amp; drop. It&apos;s permanent.

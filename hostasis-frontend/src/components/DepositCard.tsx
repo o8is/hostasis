@@ -24,6 +24,8 @@ interface DepositCardProps {
   refetchTrigger?: number
 }
 
+import styles from './DepositCard.module.css'
+
 export default function DepositCard({
   depositIndex,
   userAddress,
@@ -77,34 +79,34 @@ export default function DepositCard({
     : depositData.stampId
 
   return (
-    <div className="info-box deposit-card">
+    <div className={`info-box ${styles.depositCard}`}>
       {/* Header with reserve number and date */}
-      <div className="deposit-card-header">
-        <h4 className="deposit-card-title">Reserve #{depositIndex}</h4>
-        <span className="deposit-card-date">
+      <div className={styles.header}>
+        <h4 className={styles.title}>Reserve #{depositIndex}</h4>
+        <span className={styles.date}>
           {depositDate.toLocaleDateString()}
         </span>
       </div>
 
       {/* Content Preview - Most Important Section */}
-      <div className="deposit-card-content">
+      <div className={styles.content}>
         <FileList upload={latestUpload} />
       </div>
 
       {/* Reserve Status - Secondary Info */}
-      <div className="deposit-card-status">
-        <div className="deposit-card-status-item">
+      <div className={styles.status}>
+        <div className={styles.statusItem}>
           <div>
-            <div className="deposit-card-status-label">Reserved</div>
-            <div className="deposit-card-status-value">
+            <div className={styles.statusLabel}>Reserved</div>
+            <div className={styles.statusValue}>
               <TokenAmount value={depositData.principalDAI} symbol="DAI" />
             </div>
           </div>
         </div>
-        <div className="deposit-card-status-item">
+        <div className={styles.statusItem}>
           <div>
-            <div className="deposit-card-status-label">Expires in</div>
-            <div className="deposit-card-status-value" style={{
+            <div className={styles.statusLabel}>Expires in</div>
+            <div className={styles.statusValue} style={{
               color: stampInfo.timeRemainingSeconds && stampInfo.timeRemainingSeconds > 0 ? '#2d7a2d' : '#c93a3a'
             }}>
               {stampInfo.isLoading ? '...' : formatTimeRemaining(stampInfo.timeRemainingSeconds)}
@@ -114,14 +116,14 @@ export default function DepositCard({
       </div>
 
       {/* Actions - Clear Hierarchy */}
-      <div className="deposit-card-actions">
+      <div className={styles.actions}>
         <button
-          className="view-button view-button--primary deposit-card-action-primary"
+          className={`view-button view-button--primary ${styles.actionPrimary}`}
           onClick={onUpdateStamp}
         >
           Update Content
         </button>
-        <div className="deposit-card-actions-secondary">
+        <div className={styles.actionsSecondary}>
           <button
             className="view-button view-button--tertiary"
             onClick={onTopUp}
@@ -138,8 +140,8 @@ export default function DepositCard({
       </div>
 
       {/* Technical Details - Minimized */}
-      <div className="deposit-card-technical">
-        <span className="deposit-card-batch-id" title={depositData.stampId}>
+      <div className={styles.technical}>
+        <span className={styles.batchId} title={depositData.stampId}>
           Batch ID: {shortBatchId}
         </span>
         <CopyButton text={depositData.stampId} label="Batch ID" />

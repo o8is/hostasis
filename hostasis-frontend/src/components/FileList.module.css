@@ -1,0 +1,127 @@
+.empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.empty .textMuted {
+  color: #7a7a7a;
+  margin: 0 0 0.5rem 0;
+}
+
+.empty .textSmall {
+  font-size: 0.85rem;
+}
+
+.summary {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 3rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.summaryText {
+  text-align: center;
+}
+
+.title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin-bottom: 0.25rem;
+}
+
+.meta {
+  font-size: 0.85rem;
+  color: #7a7a7a;
+}
+
+.link {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #4a9eff;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.link:hover {
+  color: #7ab8ff;
+  text-decoration: underline;
+}
+
+.items {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.itemName {
+  flex: 1;
+  color: #b0b0b0;
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemSize {
+  color: #7a7a7a;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.itemLink {
+  color: #4a9eff;
+  text-decoration: none;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.itemLink:hover {
+  color: #7ab8ff;
+  text-decoration: underline;
+}
+
+.expand {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #b0b0b0;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.expand:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e0e0e0;
+}

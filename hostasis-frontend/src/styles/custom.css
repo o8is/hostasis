@@ -347,6 +347,26 @@ h4 {
   border-color: var(--o8-tertiary-dark) !important;
 }
 
+/* Danger Button (Red) */
+.view-button--danger {
+  background: rgba(248, 113, 113, 0.15) !important;
+  border-color: rgba(248, 113, 113, 0.3) !important;
+  color: #f87171 !important;
+}
+
+.view-button--danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.25) !important;
+  border-color: rgba(248, 113, 113, 0.5) !important;
+  color: #ff9999 !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3);
+}
+
+.view-button--danger:active {
+  background: rgba(248, 113, 113, 0.3) !important;
+  border-color: rgba(248, 113, 113, 0.6) !important;
+}
+
 /* Connect button positioning - make it more visible */
 .connect-button-wrapper {
   position: absolute;
@@ -377,29 +397,8 @@ h4 {
 }
 
 /* Enhance deposits grid */
-.reserves-container {
-  width: 100%;
-  max-width: 800px;
-  /* Force the parent flex container to expand on desktop */
-  min-width: 800px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-@media (max-width: 840px) {
-  .reserves-container {
-    min-width: auto;
-    padding: 0 1rem;
-  }
-}
-
-.deposits-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  margin-top: 1.5rem;
-  width: 100%;
-}
+/* .reserves-container moved to Reserves.module.css */
+/* .deposits-grid moved to DepositsList.module.css */
 
 /* Modal backdrop enhancement */
 .modal-backdrop {
@@ -413,18 +412,7 @@ h4 {
   margin: 3rem 0 2rem 0;
 }
 
-/* Deposit card specific styling */
-.deposit-card {
-  width: 100%;
-  max-width: none;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.deposit-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.15);
-}
+/* Deposit card specific styling moved to DepositCard.module.css */
 
 /* Button group styling */
 .button-group {
@@ -1858,41 +1846,7 @@ button[style*="background: transparent"]:hover {
 /* ===========================================
    RESERVES PAGE HEADER
    =========================================== */
-
-.reserves-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 2rem;
-}
-
-.reserves-header h1 {
-  font-size: 2rem;
-  font-weight: 600;
-  color: #e0e0e0;
-  margin: 0;
-}
-
-.create-reserve-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: #000;
-  background: linear-gradient(135deg, var(--o8-tertiary), var(--o8-tertiary-dark));
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.create-reserve-button:hover {
-  background: linear-gradient(135deg, var(--o8-tertiary-light), var(--o8-tertiary));
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);
-}
+/* Moved to Reserves.module.css */
 
 /* ===========================================
    MODAL STYLES
@@ -2638,348 +2592,8 @@ button[style*="background: transparent"]:hover {
    DEPOSIT CARD REDESIGN
    =========================================== */
 
-/* Deposit Card Header */
-.deposit-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
+/* Moved to DepositCard.module.css */
 
-.deposit-card-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #e0e0e0;
-  margin: 0;
-}
-
-.deposit-card-date {
-  font-size: 0.85rem;
-  color: #7a7a7a;
-  font-weight: normal;
-}
-
-/* Status Badge */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.35rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border: 1px solid;
-}
-
-.status-badge--active {
-  background: rgba(81, 207, 102, 0.15);
-  border-color: rgba(81, 207, 102, 0.3);
-  color: #51cf66;
-}
-
-.status-badge--expiring {
-  background: rgba(255, 183, 74, 0.15);
-  border-color: rgba(255, 183, 74, 0.3);
-  color: #ffb74a;
-}
-
-.status-badge--expired {
-  background: rgba(248, 113, 113, 0.15);
-  border-color: rgba(248, 113, 113, 0.3);
-  color: #f87171;
-}
-
-.status-badge--loading {
-  background: rgba(176, 176, 176, 0.15);
-  border-color: rgba(176, 176, 176, 0.3);
-  color: #b0b0b0;
-}
-
-/* Content Preview Section */
-.deposit-card-content {
-  margin-bottom: 1.5rem;
-}
-
-/* File List Styles */
-.file-list-empty {
-  padding: 2rem 1rem;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-}
-
-.file-list-empty .text-muted {
-  color: #7a7a7a;
-  margin: 0 0 0.5rem 0;
-}
-
-.file-list-empty .text-small {
-  font-size: 0.85rem;
-}
-
-.file-list-summary {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem 3rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  margin-bottom: 1rem;
-}
-
-.file-list-summary-text {
-  text-align: center;
-}
-
-.file-list-title {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #e0e0e0;
-  margin-bottom: 0.25rem;
-}
-
-.file-list-meta {
-  font-size: 0.85rem;
-  color: #7a7a7a;
-}
-
-.file-list-link {
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  color: #4a9eff;
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: color 0.2s ease;
-}
-
-.file-list-link:hover {
-  color: #7ab8ff;
-  text-decoration: underline;
-}
-
-.file-list-items {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 1rem 0;
-}
-
-.file-list-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.file-list-item:last-child {
-  border-bottom: none;
-}
-
-.file-list-item-name {
-  flex: 1;
-  color: #b0b0b0;
-  font-size: 0.85rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-list-item-size {
-  color: #7a7a7a;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-}
-
-.file-list-item-link {
-  color: #4a9eff;
-  text-decoration: none;
-  font-size: 0.8rem;
-  flex-shrink: 0;
-  transition: color 0.2s ease;
-}
-
-.file-list-item-link:hover {
-  color: #7ab8ff;
-  text-decoration: underline;
-}
-
-.file-list-expand {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #b0b0b0;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  margin-bottom: 1rem;
-  width: 100%;
-  transition: all 0.2s ease;
-}
-
-.file-list-expand:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #e0e0e0;
-}
-
-/* Reserve Status Section */
-.deposit-card-status {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding: 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-}
-
-.deposit-card-status-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.deposit-card-status-label {
-  font-size: 0.75rem;
-  color: #7a7a7a;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.25rem;
-}
-
-.deposit-card-status-value {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: #e0e0e0;
-}
-
-/* Actions Section */
-.deposit-card-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.deposit-card-action-primary {
-  width: 100%;
-  justify-content: center;
-  font-size: 0.95rem;
-}
-
-.deposit-card-actions-secondary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-}
-
-/* Danger Button (Red) */
-.view-button--danger {
-  background: rgba(248, 113, 113, 0.15) !important;
-  border-color: rgba(248, 113, 113, 0.3) !important;
-  color: #f87171 !important;
-}
-
-.view-button--danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.25) !important;
-  border-color: rgba(248, 113, 113, 0.5) !important;
-  color: #ff9999 !important;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.3);
-}
-
-.view-button--danger:active {
-  background: rgba(248, 113, 113, 0.3) !important;
-  border-color: rgba(248, 113, 113, 0.6) !important;
-}
-
-/* Technical Details Section */
-.deposit-card-technical {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.deposit-card-batch-id {
-  font-size: 0.8rem;
-  color: #7a7a7a;
-  font-family: monospace;
-}
-
-/* Copy Button */
-.copy-button {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #b0b0b0;
-  padding: 0.35rem 0.75rem;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.75rem;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.copy-button:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #e0e0e0;
-}
-
-.copy-button:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-/* Modal Warning */
-.modal-warning {
-  background: rgba(255, 183, 74, 0.1);
-  border: 1px solid rgba(255, 183, 74, 0.3);
-  border-radius: 8px;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
-.modal-warning p {
-  color: #ffb74a;
-  margin: 0;
-  font-size: 0.9rem;
-  text-align: center;
-}
-
-/* Responsive */
-@media (max-width: 600px) {
-  .deposit-card-status {
-    grid-template-columns: 1fr;
-  }
-
-  .deposit-card-actions-secondary {
-    grid-template-columns: 1fr;
-  }
-
-  .deposit-card-technical {
-    flex-direction: column;
-    gap: 0.75rem;
-    align-items: flex-start;
-  }
-
-  .file-list-summary {
-    padding: 1rem 2.5rem 1rem 1rem;
-  }
-
-  .file-list-link {
-    right: 0.75rem;
-    font-size: 0.8rem;
-  }
-}
+/* ===========================================
+   RESPONSIVE ADJUSTMENTS
+   =========================================== */

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { buildSwarmUrl } from '../utils/swarmUrl'
 import { formatFileSize } from '../utils/fileFormat'
+import styles from './FileList.module.css'
 
 interface UploadedFile {
   name: string
@@ -31,9 +32,9 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
 
   if (!upload) {
     return (
-      <div className="file-list-empty">
-        <p className="text-muted">No uploads yet</p>
-        <p className="text-small text-muted">
+      <div className={styles.empty}>
+        <p className={styles.textMuted}>No uploads yet</p>
+        <p className={`${styles.textSmall} ${styles.textMuted}`}>
           Upload files to this reserve to start using decentralized storage
         </p>
       </div>
@@ -49,10 +50,10 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
     const websiteUrl = buildSwarmUrl(upload.reference, upload.metadata)
     return (
       <div className="file-list-website">
-        <div className="file-list-summary">
-          <div className="file-list-summary-text">
-            <div className="file-list-title">Website</div>
-            <div className="file-list-meta">
+        <div className={styles.summary}>
+          <div className={styles.summaryText}>
+            <div className={styles.title}>Website</div>
+            <div className={styles.meta}>
               {fileCount.toLocaleString()} {fileCount === 1 ? 'file' : 'files'} • {formatFileSize(upload.totalSize)}
             </div>
           </div>
@@ -60,7 +61,7 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
             href={websiteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="file-list-link"
+            className={styles.link}
           >
             View →
           </a>
@@ -74,12 +75,12 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
     const baseUrl = buildSwarmUrl(upload.reference, upload.metadata)
     return (
       <div className="file-list-small">
-        <div className="file-list-summary">
-          <div className="file-list-summary-text">
-            <div className="file-list-title">
+        <div className={styles.summary}>
+          <div className={styles.summaryText}>
+            <div className={styles.title}>
               {fileCount} {fileCount === 1 ? 'File' : 'Files'}
             </div>
-            <div className="file-list-meta">
+            <div className={styles.meta}>
               {formatFileSize(upload.totalSize)}
             </div>
           </div>
@@ -87,12 +88,12 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
             href={baseUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="file-list-link"
+            className={styles.link}
           >
             View All →
           </a>
         </div>
-        <ul className="file-list-items">
+        <ul className={styles.items}>
           {upload.files.map((file, index) => {
             const fileUrl = file.path
               ? `${baseUrl}/${file.path}`
@@ -100,14 +101,14 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
                 ? `${baseUrl}/${upload.metadata.filename}`
                 : baseUrl
             return (
-              <li key={index} className="file-list-item">
-                <span className="file-list-item-name">{file.name}</span>
-                <span className="file-list-item-size">{formatFileSize(file.size)}</span>
+              <li key={index} className={styles.item}>
+                <span className={styles.itemName}>{file.name}</span>
+                <span className={styles.itemSize}>{formatFileSize(file.size)}</span>
                 <a
                   href={fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="file-list-item-link"
+                  className={styles.itemLink}
                 >
                   View →
                 </a>
@@ -127,12 +128,12 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
 
     return (
       <div className="file-list-medium">
-        <div className="file-list-summary">
-          <div className="file-list-summary-text">
-            <div className="file-list-title">
+        <div className={styles.summary}>
+          <div className={styles.summaryText}>
+            <div className={styles.title}>
               {fileCount} Files
             </div>
-            <div className="file-list-meta">
+            <div className={styles.meta}>
               {formatFileSize(upload.totalSize)}
             </div>
           </div>
@@ -140,23 +141,23 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
             href={baseUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="file-list-link"
+            className={styles.link}
           >
             View All →
           </a>
         </div>
-        <ul className="file-list-items">
+        <ul className={styles.items}>
           {visibleFiles.map((file, index) => {
             const fileUrl = file.path ? `${baseUrl}/${file.path}` : baseUrl
             return (
-              <li key={index} className="file-list-item">
-                <span className="file-list-item-name">{file.name}</span>
-                <span className="file-list-item-size">{formatFileSize(file.size)}</span>
+              <li key={index} className={styles.item}>
+                <span className={styles.itemName}>{file.name}</span>
+                <span className={styles.itemSize}>{formatFileSize(file.size)}</span>
                 <a
                   href={fileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="file-list-item-link"
+                  className={styles.itemLink}
                 >
                   View →
                 </a>
@@ -167,7 +168,7 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
         {!expanded && remainingCount > 0 && (
           <button
             onClick={() => setExpanded(true)}
-            className="file-list-expand"
+            className={styles.expand}
           >
             + View {remainingCount} more {remainingCount === 1 ? 'file' : 'files'}
           </button>
@@ -180,10 +181,10 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
   const baseUrl = buildSwarmUrl(upload.reference, upload.metadata)
   return (
     <div className="file-list-large">
-      <div className="file-list-summary">
-        <div className="file-list-summary-text">
-          <div className="file-list-title">Large Collection</div>
-          <div className="file-list-meta">
+      <div className={styles.summary}>
+        <div className={styles.summaryText}>
+          <div className={styles.title}>Large Collection</div>
+          <div className={styles.meta}>
             {fileCount.toLocaleString()} files • {formatFileSize(upload.totalSize)}
           </div>
         </div>
@@ -191,7 +192,7 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
           href={baseUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="file-list-link"
+          className={styles.link}
         >
           View Files →
         </a>

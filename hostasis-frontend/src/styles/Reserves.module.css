@@ -1,0 +1,52 @@
+/* Reserves Page Specific Styles */
+
+.reservesContainer {
+  width: 100%;
+  max-width: 800px;
+  /* Force the parent flex container to expand on desktop */
+  min-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 840px) {
+  .reservesContainer {
+    min-width: auto;
+    padding: 0 1rem;
+  }
+}
+
+.reservesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.reservesHeader h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #e0e0e0;
+  margin: 0;
+}
+
+.createReserveButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #000;
+  background: linear-gradient(135deg, var(--o8-tertiary), var(--o8-tertiary-dark));
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.createReserveButton:hover {
+  background: linear-gradient(135deg, var(--o8-tertiary-light), var(--o8-tertiary));
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);
+}
