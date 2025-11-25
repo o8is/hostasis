@@ -409,7 +409,7 @@ const Upload: NextPage = () => {
   return (
     <>
       <Head>
-        <title>Upload - Hostasis</title>
+        <title>Upload | Hostasis</title>
         <meta
           content="Drop your files and deploy to permanent Swarm storage."
           name="description"
