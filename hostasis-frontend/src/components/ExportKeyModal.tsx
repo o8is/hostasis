@@ -40,7 +40,7 @@ export default function ExportKeyModal({ reserveIndex, onClose }: ExportKeyModal
     };
 
     exportKey();
-  }, [hasAttempted, feedService.exportFeedKey, reserveIndex]);
+  }, [hasAttempted, feedService, reserveIndex]);
 
   return (
     <Modal title="Export Feed Key" onClose={onClose}>

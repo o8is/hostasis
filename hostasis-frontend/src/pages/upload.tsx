@@ -517,7 +517,7 @@ const Upload: NextPage = () => {
         
         <div className={styles.hero}>
           <h1 className={styles.headline}>
-            {reserveId !== undefined ? 'Update your site' : 'Drag & drop. It\'s permanent.'}
+            {reserveId !== undefined ? 'Update your site' : "Drag & drop. It's permanent."}
           </h1>
           <p className={styles.subheadline}>
             {reserveId !== undefined ? (

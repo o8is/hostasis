@@ -60,7 +60,7 @@ export function useTokenConversion() {
     else if (daiBalance && (daiBalance as bigint) > 0n) setCurrentToken('WRAPPED_DAI');
     else if (nativeBalance?.value && nativeBalance.value > 0n) setCurrentToken('NATIVE_XDAI');
     else setCurrentToken(null);
-  }, [nativeBalance, daiBalance, sdaiBalance, flowStep, tokenOverride, availableTokens.length]);
+  }, [nativeBalance, daiBalance, sdaiBalance, flowStep, tokenOverride, availableTokens]);
 
   // State machine: Handle transaction success
   useEffect(() => {

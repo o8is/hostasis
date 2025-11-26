@@ -225,7 +225,7 @@ export function useCreatePostageBatch(): UseCreatePostageBatchReturn {
         }
       );
     });
-  }, [address, createBatchWrite]);
+  }, [address, createBatchWrite, calculateTotalBZZ]);
 
   const getBatchIdFromReceipt = useCallback(async (hash: Hex): Promise<Hex> => {
     if (!publicClient) throw new Error('Public client not available');
