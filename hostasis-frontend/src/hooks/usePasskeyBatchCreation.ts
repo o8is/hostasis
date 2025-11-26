@@ -75,7 +75,8 @@ export function usePasskeyBatchCreation(): UsePasskeyBatchCreationReturn {
         address: BZZ_ADDRESS,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [POSTAGE_STAMP_ADDRESS, maxUint256] // Approve unlimited for future batches
+        args: [POSTAGE_STAMP_ADDRESS, maxUint256], // Approve unlimited for future batches
+        maxPriorityFeePerGas: 2000000000n // 2 Gwei
       });
 
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
@@ -93,7 +94,8 @@ export function usePasskeyBatchCreation(): UsePasskeyBatchCreationReturn {
         address: POSTAGE_STAMP_ADDRESS,
         abi: PostageStampABI,
         functionName: 'createBatch',
-        args: [account.address, initialBalancePerChunk, depth, bucketDepth, nonce, immutable]
+        args: [account.address, initialBalancePerChunk, depth, bucketDepth, nonce, immutable],
+        maxPriorityFeePerGas: 2000000000n // 2 Gwei
       });
 
       // Wait for transaction receipt

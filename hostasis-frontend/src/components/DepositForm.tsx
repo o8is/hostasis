@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { parseEther, type Hex } from 'viem';
+import { useAccount } from 'wagmi';
 import { useTokenConversion } from '../hooks/useTokenConversion';
 import { useDepositWithPermit } from '../hooks/usePostageManager';
+import { useUserDepositCount } from '../hooks/useDeposits';
 import TokenAmount from './TokenAmount';
 import TokenSelector from './TokenSelector';
 import { getMaxAmountInfo } from '../utils/maxAmount';
@@ -9,19 +11,35 @@ import { ensureBatchIdPrefix } from '../utils/batchId';
 
 interface DepositFormProps {
   onDepositSuccess?: () => void;
+  /** Called with the new reserve index after successful deposit */
+  onDepositSuccessWithIndex?: (reserveIndex: number, stampId: string) => void;
   initialAmount?: string;
   initialStampId?: string;
+  /** Content hash (Swarm reference) to associate with the new reserve */
+  initialContentHash?: string;
   onCancel?: () => void;
   isModal?: boolean;
 }
 
-export default function DepositForm({ onDepositSuccess, initialAmount, initialStampId, onCancel, isModal = false }: DepositFormProps) {
+export default function DepositForm({ 
+  onDepositSuccess, 
+  onDepositSuccessWithIndex,
+  initialAmount, 
+  initialStampId, 
+  initialContentHash,
+  onCancel, 
+  isModal = false 
+}: DepositFormProps) {
   const [amount, setAmount] = useState(initialAmount || '');
   const [stampId, setStampId] = useState(initialStampId || '');
   const [error, setError] = useState('');
 
+  const { address } = useAccount();
   const conversion = useTokenConversion();
-  const { depositWithPermit, isPending: isDepositing, isSigning, isConfirming, isSuccess: isDeposited } = useDepositWithPermit();
+  const { depositWithPermit, isPending: isDepositing, isSigning, isConfirming, isSuccess: isDeposited, hash: depositHash } = useDepositWithPermit();
+  
+  // Track deposit count to determine new reserve index
+  const { data: depositCount, refetch: refetchDepositCount } = useUserDepositCount(address);
 
   const [depositStep, setDepositStep] = useState('');
 
@@ -49,6 +67,17 @@ export default function DepositForm({ onDepositSuccess, initialAmount, initialSt
   // Handle successful deposit
   useEffect(() => {
     if (isDeposited) {
+      // Refetch deposit count to get the new reserve index
+      refetchDepositCount().then((result) => {
+        const newCount = result.data as bigint | undefined;
+        if (newCount !== undefined && onDepositSuccessWithIndex) {
+          // New reserve index is count - 1 (0-indexed)
+          const newReserveIndex = Number(newCount) - 1;
+          const normalizedStampId = ensureBatchIdPrefix(stampId);
+          onDepositSuccessWithIndex(newReserveIndex, normalizedStampId);
+        }
+      });
+      
       if (onDepositSuccess) {
         onDepositSuccess();
       }
@@ -58,7 +87,7 @@ export default function DepositForm({ onDepositSuccess, initialAmount, initialSt
       setDepositStep('');
       conversion.resetConversion();
     }
-  }, [isDeposited, onDepositSuccess, conversion]);
+  }, [isDeposited, onDepositSuccess, onDepositSuccessWithIndex, conversion, refetchDepositCount, stampId]);
 
   // Get balance info based on detected token
   const getBalance = () => {

@@ -9,5 +9,8 @@ export const POSTAGE_STAMP_ADDRESS: `0x${string}` = '0x45a1502382541Cd610CC9068e
 
 export const GNOSIS_CHAIN_ID = 100;
 
+// Gnosis Chain RPC URL
+export const GNOSIS_RPC_URL = 'https://rpc.gnosis.gateway.fm' as const;
+
 // Gateway URL for Swarm uploads (using subdomain routing with CIDs)
 export const SWARM_GATEWAY_URL = 'https://bzz.sh' as const;

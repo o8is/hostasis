@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
 import { useReadContract } from 'wagmi'
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses'
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json'
@@ -7,6 +8,8 @@ import { CopyButton } from './CopyButton'
 import { FileList } from './FileList'
 import { getUploadsByBatchId, type UploadRecord } from '../utils/uploadHistory'
 import { useStampInfo, formatTimeRemaining } from '../hooks/useStampInfo'
+import { useFeedService } from '../hooks/useFeedService'
+import { hasFeed as checkHasFeed } from '../utils/feedStorage'
 
 type Deposit = {
   sDAIAmount: bigint
@@ -21,6 +24,7 @@ interface DepositCardProps {
   onWithdraw: () => void
   onUpdateStamp: () => void
   onTopUp: () => void
+  onExportKey?: () => void
   refetchTrigger?: number
 }
 
@@ -32,9 +36,15 @@ export default function DepositCard({
   onWithdraw,
   onUpdateStamp,
   onTopUp,
+  onExportKey,
   refetchTrigger,
 }: DepositCardProps) {
+  const router = useRouter()
   const [uploads, setUploads] = useState<UploadRecord[]>([])
+  const [isInitializing, setIsInitializing] = useState(false)
+  const [feedUrl, setFeedUrl] = useState<string | null>(null)
+  const feedService = useFeedService()
+  const feedExists = checkHasFeed(depositIndex)
 
   const { data: deposit, refetch } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
@@ -42,6 +52,20 @@ export default function DepositCard({
     functionName: 'getUserDeposit',
     args: [userAddress, BigInt(depositIndex)],
   })
+
+  // Extract deposit data (or undefined if not loaded)
+  const depositData = deposit ? (deposit as unknown as Deposit) : undefined
+
+  // Fetch stamp information (includes depth)
+  const stampInfo = useStampInfo(depositData?.stampId)
+
+  // Get the manifest URL if feed exists
+  useEffect(() => {
+    if (feedExists) {
+      const manifestUrl = feedService.getFeedManifestUrl(depositIndex)
+      setFeedUrl(manifestUrl)
+    }
+  }, [feedExists, depositIndex, feedService])
 
   // Refetch when trigger changes
   useEffect(() => {
@@ -52,18 +76,11 @@ export default function DepositCard({
 
   // Fetch upload history for this batch/stamp
   useEffect(() => {
-    if (deposit) {
-      const depositData = deposit as unknown as Deposit
+    if (depositData) {
       const batchUploads = getUploadsByBatchId(depositData.stampId)
       setUploads(batchUploads)
     }
-  }, [deposit])
-
-  // Extract deposit data (or undefined if not loaded)
-  const depositData = deposit ? (deposit as unknown as Deposit) : undefined
-
-  // Fetch stamp information from blockchain and gateway
-  const stampInfo = useStampInfo(depositData?.stampId)
+  }, [depositData])
 
   if (!deposit || !depositData) return null
 
@@ -87,6 +104,22 @@ export default function DepositCard({
           {depositDate.toLocaleDateString()}
         </span>
       </div>
+
+      {/* Current URL - Show prominently if feed exists */}
+      {feedUrl && (
+        <div className={styles.stableUrl}>
+          <div className={styles.stableUrlLabel}>Current URL</div>
+          <a
+            href={feedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.stableUrlLink}
+          >
+            {feedUrl}
+          </a>
+          <CopyButton text={feedUrl} label="URL" />
+        </div>
+      )}
 
       {/* Content Preview - Most Important Section */}
       <div className={styles.content}>
@@ -117,12 +150,48 @@ export default function DepositCard({
 
       {/* Actions - Clear Hierarchy */}
       <div className={styles.actions}>
-        <button
-          className={`view-button view-button--primary ${styles.actionPrimary}`}
-          onClick={onUpdateStamp}
-        >
-          Update Content
-        </button>
+        {feedExists ? (
+          <button
+            className={`view-button view-button--primary ${styles.actionPrimary}`}
+            onClick={() => router.push(`/upload?reserveId=${depositIndex}`)}
+          >
+            Update Site
+          </button>
+        ) : latestUpload ? (
+          /* Has uploads but no feed - offer to initialize tracking */
+          <button
+            className={`view-button view-button--primary ${styles.actionPrimary}`}
+            disabled={isInitializing}
+            onClick={async () => {
+              try {
+                setIsInitializing(true)
+                // Initialize feed with stamp depth from useStampInfo
+                const manifestUrl = await feedService.initializeFeed(
+                  depositIndex,
+                  depositData.stampId,
+                  stampInfo.depth,
+                  latestUpload.reference
+                )
+                // Update the feed URL in state to trigger re-render
+                setFeedUrl(manifestUrl)
+              } catch (err) {
+                console.error('Failed to initialize feed:', err)
+                alert('Failed to initialize feed. Please try again.')
+              } finally {
+                setIsInitializing(false)
+              }
+            }}
+          >
+            {isInitializing ? 'Initializing...' : 'Enable Updates'}
+          </button>
+        ) : (
+          <button
+            className={`view-button view-button--primary ${styles.actionPrimary}`}
+            onClick={onUpdateStamp}
+          >
+            Update Content
+          </button>
+        )}
         <div className={styles.actionsSecondary}>
           <button
             className="view-button view-button--tertiary"
@@ -130,6 +199,14 @@ export default function DepositCard({
           >
             Top Up
           </button>
+          {feedExists && onExportKey && (
+            <button
+              className="view-button"
+              onClick={onExportKey}
+            >
+              Export Key
+            </button>
+          )}
           <button
             className="view-button view-button--danger"
             onClick={onWithdraw}
