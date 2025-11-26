@@ -517,12 +517,22 @@ const Upload: NextPage = () => {
         
         <div className={styles.hero}>
           <h1 className={styles.headline}>
-            Drag &amp; drop. It&apos;s permanent.
+            {reserveId !== undefined ? 'Update your site' : 'Drag & drop. It\'s permanent.'}
           </h1>
           <p className={styles.subheadline}>
-            Drop a folder with your project&apos;s HTML, CSS, and JS files.
-            <br />
-            We&apos;ll give you permanent decentralized hosting.
+            {reserveId !== undefined ? (
+              <>
+                Upload a new version for Reserve #{reserveId}.
+                <br />
+                No additional costs-just drop your updated files.
+              </>
+            ) : (
+              <>
+                Drop a folder with your project&apos;s HTML, CSS, and JS files.
+                <br />
+                We&apos;ll give you permanent decentralized hosting.
+              </>
+            )}
           </p>
         </div>
 
@@ -531,65 +541,101 @@ const Upload: NextPage = () => {
             <FileDropZone onFilesDropped={handleFilesDropped} />
           )}
 
-          {state.step === 'review' && calculations && (
+          {state.step === 'review' && (
             <div className={styles.review}>
-              <div className={styles.reviewHeader}>
-                <h2>Ready to Deploy</h2>
-                <p>Review your upload and costs</p>
-              </div>
-
-              <div className={styles.reviewSummary}>
-                <div className={styles.reviewStat}>
-                  <span className={styles.statLabel}>Files</span>
-                  <span className={styles.statValue}>{state.files.length}</span>
-                </div>
-                <div className={styles.reviewStat}>
-                  <span className={styles.statLabel}>Total Size</span>
-                  <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
-                </div>
-                <div className={styles.reviewStat}>
-                  <span className={styles.statLabel}>Storage</span>
-                  <span className={styles.statValue}>{formatSmartNumber(storageSizeGB)} GB</span>
-                </div>
-              </div>
-
-              <div className={styles.reviewCosts}>
-                <h3>Cost Breakdown</h3>
-
-                {calculations.bzzAmount && (
-                  <div className={styles.costLine}>
-                    <span>BZZ for Stamp (7 days)</span>
-                    <span>{formatSmartNumber(parseFloat(formatBZZ(calculations.bzzAmount)))} BZZ</span>
+              {reserveId !== undefined ? (
+                /* UPDATE MODE - Show simplified review without costs */
+                <>
+                  <div className={styles.reviewHeader}>
+                    <h2>Update Reserve #{reserveId}</h2>
+                    <p>Upload new version to your existing reserve</p>
                   </div>
-                )}
 
-                <div className={styles.costLine}>
-                  <span>Est. xDAI for BZZ Swap</span>
-                  <span>{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
-                </div>
-
-                <div className={styles.costLine}>
-                  <span>Recommended Reserve</span>
-                  <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
-                </div>
-
-                {calculations.depth && getPlanTierName(calculations.depth) && (
-                  <div className={styles.costLine}>
-                    <span>Storage Plan</span>
-                    <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                  <div className={styles.reviewSummary}>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Files</span>
+                      <span className={styles.statValue}>{state.files.length}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Total Size</span>
+                      <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Mode</span>
+                      <span className={styles.statValue}>Update</span>
+                    </div>
                   </div>
-                )}
 
-                <div className={`${styles.costLine} ${styles.costLineTotal}`}>
-                  <span>Total xDAI Needed</span>
-                  <span>{formatSmartNumber(calculations.totalUpfrontCost)} xDAI</span>
-                </div>
+                  <div className={styles.reviewCosts}>
+                    <h3>Using Existing Stamp</h3>
+                    <div className={styles.costNote} style={{ marginTop: '0.5rem' }}>
+                      No additional costs! You're using the existing postage stamp from Reserve #{reserveId}.
+                      Just upload your new files and deploy the update.
+                    </div>
+                  </div>
+                </>
+              ) : calculations ? (
+                /* NEW UPLOAD MODE - Show full cost breakdown */
+                <>
+                  <div className={styles.reviewHeader}>
+                    <h2>Ready to Deploy</h2>
+                    <p>Review your upload and costs</p>
+                  </div>
 
-                <div className={styles.costNote}>
-                  Your reserve generates yield to pay for permanent hosting.
-                  No monthly fees, ever.
-                </div>
-              </div>
+                  <div className={styles.reviewSummary}>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Files</span>
+                      <span className={styles.statValue}>{state.files.length}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Total Size</span>
+                      <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Storage</span>
+                      <span className={styles.statValue}>{formatSmartNumber(storageSizeGB)} GB</span>
+                    </div>
+                  </div>
+
+                  <div className={styles.reviewCosts}>
+                    <h3>Cost Breakdown</h3>
+
+                    {calculations.bzzAmount && (
+                      <div className={styles.costLine}>
+                        <span>BZZ for Stamp (7 days)</span>
+                        <span>{formatSmartNumber(parseFloat(formatBZZ(calculations.bzzAmount)))} BZZ</span>
+                      </div>
+                    )}
+
+                    <div className={styles.costLine}>
+                      <span>Est. xDAI for BZZ Swap</span>
+                      <span>{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
+                    </div>
+
+                    <div className={styles.costLine}>
+                      <span>Recommended Reserve</span>
+                      <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
+                    </div>
+
+                    {calculations.depth && getPlanTierName(calculations.depth) && (
+                      <div className={styles.costLine}>
+                        <span>Storage Plan</span>
+                        <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                      </div>
+                    )}
+
+                    <div className={`${styles.costLine} ${styles.costLineTotal}`}>
+                      <span>Total xDAI Needed</span>
+                      <span>{formatSmartNumber(calculations.totalUpfrontCost)} xDAI</span>
+                    </div>
+
+                    <div className={styles.costNote}>
+                      Your reserve generates yield to pay for permanent hosting.
+                      No monthly fees, ever.
+                    </div>
+                  </div>
+                </>
+              ) : null}
 
               {/* SPA Option - only show if uploading a website with index.html */}
               {state.files.some(f => 
@@ -625,7 +671,7 @@ const Upload: NextPage = () => {
                     className={styles.ctaButton}
                     disabled={isProcessing}
                   >
-                    {isProcessing ? 'Processing...' : 'Deploy to Swarm'}
+                    {isProcessing ? 'Processing...' : reserveId !== undefined ? 'Upload Update' : 'Deploy to Swarm'}
                   </button>
                   <button
                     onClick={handleReset}
@@ -690,21 +736,21 @@ const Upload: NextPage = () => {
           {state.step === 'complete' && (
             <div className={styles.complete}>
               <div className={styles.completeIcon}>✓</div>
-              <h2>Deployed Successfully!</h2>
+              <h2>Uploaded Successfully!</h2>
               <p>
                 Your files are now on the Swarm network.
               </p>
               {state.swarmUrl && (
                 <div className={styles.completeActions}>
                   <a href={state.swarmUrl} target="_blank" rel="noopener noreferrer" className={styles.swarmLink}>
-                    View on Swarm
+                    Preview
                   </a>
 
-                  {/* Show stable URL if we deployed to an existing feed */}
+                  {/* Show live URL if we deployed to an existing feed */}
                   {stableUrl && (
                     <div className={styles.reservePrompt} style={{ background: 'rgba(74, 222, 128, 0.1)', borderColor: '#4ade80' }}>
                       <p className={styles.reserveMessage} style={{ color: '#4ade80' }}>
-                        <strong>✓ Feed Updated!</strong> Your stable URL is ready:
+                        <strong>✓ Deployed!</strong> Live URL:
                       </p>
                       <a 
                         href={stableUrl} 
@@ -732,7 +778,7 @@ const Upload: NextPage = () => {
                   {!reserveId && !stableUrl && (
                     <div className={styles.reservePrompt}>
                       <p className={styles.reserveMessage}>
-                        <strong>Almost done!</strong> Create a reserve to get a stable URL for updates.
+                        <strong>Almost done!</strong> Create a reserve to enable updates and get a live URL.
                       </p>
                       <button
                         onClick={() => {
@@ -746,7 +792,7 @@ const Upload: NextPage = () => {
                         }}
                         className={styles.createReserveButton}
                       >
-                        Create Reserve & Get Stable URL
+                        Create Reserve & Get Live URL
                       </button>
                     </div>
                   )}
@@ -755,7 +801,10 @@ const Upload: NextPage = () => {
                   {reserveId !== undefined && !stableUrl && !isDeployingToFeed && feedService.hasFeed(reserveId) && state.batchId && (
                     <div className={styles.reservePrompt}>
                       <p className={styles.reserveMessage}>
-                        <strong>Update your site</strong> Deploy this new version to your stable URL.
+                        <strong>Deploy to Feed</strong>
+                      </p>
+                      <p className={styles.reserveMessage} style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                        Check the preview above. If it looks good, deploy to make it live.
                       </p>
                       <button
                         onClick={async () => {
@@ -776,16 +825,16 @@ const Upload: NextPage = () => {
                             setIsDeployingToFeed(false);
                           }
                         }}
-                        className={styles.createReserveButton}
+                        className={styles.ctaButton}
                       >
-                        Deploy Update
+                        Deploy
                       </button>
                     </div>
                   )}
 
                   {isDeployingToFeed && (
                     <div className={styles.reservePrompt}>
-                      <p className={styles.reserveMessage}>Deploying update to feed...</p>
+                      <p className={styles.reserveMessage}>Deploying to feed...</p>
                     </div>
                   )}
                 </div>

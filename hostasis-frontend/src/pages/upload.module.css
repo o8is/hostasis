@@ -577,26 +577,29 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2rem;
+  gap: 1.5rem;
   margin-top: 2rem;
 }
 
 .swarmLink {
   display: inline-block;
-  color: var(--o8-tertiary);
+  color: var(--o8-primary);
   text-decoration: underline;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  transition: opacity 0.2s ease;
 }
 
 .swarmLink:hover {
-  color: var(--o8-tertiary-light);
+  opacity: 0.8;
+  text-decoration: underline;
 }
 
 .reservePrompt {
   background: rgba(255, 183, 74, 0.1);
   border: 2px solid var(--o8-tertiary);
   border-radius: 12px;
-  padding: 1.5rem 2rem;
+  padding: 2rem;
   text-align: center;
   max-width: 500px;
   width: 100%;
@@ -606,14 +609,18 @@
   margin: 0 0 1.5rem;
   color: #e0e0e0;
   font-size: 1rem;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .reserveMessage strong {
   color: var(--o8-tertiary);
   display: block;
-  margin-bottom: 0.5rem;
-  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+  font-size: 1.2rem;
+}
+
+.reservePrompt button {
+  margin-top: 0.5rem;
 }
 
 .createReserveButton {
@@ -665,14 +672,18 @@
   }
 
   .completeActions {
-    gap: 1.5rem;
+    gap: 1.25rem;
   }
 
   .reservePrompt {
-    padding: 1.25rem 1.5rem;
+    padding: 1.5rem;
   }
 
   .reserveMessage {
     font-size: 0.9rem;
+  }
+
+  .reserveMessage strong {
+    font-size: 1.1rem;
   }
 }

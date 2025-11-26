@@ -28,9 +28,9 @@ const ReservesPage: NextPage = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   
-  // Feed service for stable URLs
+  // Feed service for live URLs
   const feedService = useFeedService();
-  const [stableUrl, setStableUrl] = useState<string | null>(null);
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [isInitializingFeed, setIsInitializingFeed] = useState(false);
 
@@ -92,8 +92,8 @@ const ReservesPage: NextPage = () => {
 
         // Initialize feed and deploy first version
         await feedService.initializeFeed(reserveIndex, stampId, Number(depth), initialContentHash);
-        const url = feedService.getFeedUrl(reserveIndex);
-        setStableUrl(url);
+        const url = feedService.getFeedManifestUrl(reserveIndex);
+        setLiveUrl(url);
 
         // Close modal after success
         setShowCreateModal(false);
@@ -153,17 +153,17 @@ const ReservesPage: NextPage = () => {
         )}
         
         {/* Show URL after successful feed initialization */}
-        {stableUrl && (
+        {liveUrl && (
           <div className="info-box" style={{ marginTop: '2rem', textAlign: 'center' }}>
             <h3 style={{ marginTop: 0, color: '#4ade80' }}>✓ Content Tracking Enabled!</h3>
             <p className="description">
-              Your current content URL. Update your site anytime from the &quot;Update Site&quot; button:
+              Live URL — update your content anytime from the &quot;Update Site&quot; button:
             </p>
-            <a 
-              href={stableUrl} 
-              target="_blank" 
+            <a
+              href={liveUrl}
+              target="_blank"
               rel="noopener noreferrer"
-              style={{ 
+              style={{
                 display: 'block',
                 marginTop: '1rem',
                 padding: '0.75rem 1rem',
@@ -175,10 +175,10 @@ const ReservesPage: NextPage = () => {
                 fontSize: '0.9rem'
               }}
             >
-              {stableUrl}
+              {liveUrl}
             </a>
-            <button 
-              onClick={() => setStableUrl(null)}
+            <button
+              onClick={() => setLiveUrl(null)}
               style={{ marginTop: '1rem' }}
               className="view-button"
             >

@@ -9,7 +9,7 @@ import { FileList } from './FileList'
 import { getUploadsByBatchId, type UploadRecord } from '../utils/uploadHistory'
 import { useStampInfo, formatTimeRemaining } from '../hooks/useStampInfo'
 import { useFeedService } from '../hooks/useFeedService'
-import { hasFeed as checkHasFeed } from '../utils/feedStorage'
+import { hasFeed as checkHasFeed, getCurrentFeedIndex } from '../utils/feedStorage'
 
 type Deposit = {
   sDAIAmount: bigint
@@ -105,10 +105,17 @@ export default function DepositCard({
         </span>
       </div>
 
-      {/* Current URL - Show prominently if feed exists */}
+      {/* Live URL - Show prominently if feed exists */}
       {feedUrl && (
         <div className={styles.stableUrl}>
-          <div className={styles.stableUrlLabel}>Current URL</div>
+          <div className={styles.stableUrlLabel}>
+            Live URL
+            {feedExists && (
+              <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>
+                (v{getCurrentFeedIndex(depositIndex)})
+              </span>
+            )}
+          </div>
           <a
             href={feedUrl}
             target="_blank"

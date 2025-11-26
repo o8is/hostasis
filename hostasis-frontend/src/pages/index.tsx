@@ -30,10 +30,10 @@ const Home: NextPage = () => {
             Upload once. Host forever.
           </h1>
           <p className="hero-subheadline">
-            Your storage is paid for by yield — permanently.
+            Your storage is paid for by yield - permanently.
           </p>
           <p className="hero-description">
-            Reserve your storage with any supported asset. Your reserve earns yield. Hostasis converts that yield into Swarm storage so your files stay online forever — no subscriptions, no monthly bills.
+            Reserve your storage with any supported asset. Your reserve earns yield. Hostasis converts that yield into Swarm storage so your files stay online forever - no subscriptions, no monthly bills.
           </p>
         </div>
 
