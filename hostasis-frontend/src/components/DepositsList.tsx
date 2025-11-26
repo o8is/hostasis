@@ -5,6 +5,7 @@ import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import WithdrawModal from './WithdrawModal';
 import UpdateStampModal from './UpdateStampModal';
 import TopUpModal from './TopUpModal';
+import ExportKeyModal from './ExportKeyModal';
 import DepositCard from './DepositCard';
 
 import styles from './DepositsList.module.css';
@@ -15,6 +16,7 @@ export default function DepositsList() {
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [showUpdateStampModal, setShowUpdateStampModal] = useState(false);
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [showExportKeyModal, setShowExportKeyModal] = useState(false);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
 
   // Get user deposit count
@@ -56,6 +58,10 @@ export default function DepositsList() {
                 onTopUp={() => {
                   setSelectedDeposit(depositIndex);
                   setShowTopUpModal(true);
+                }}
+                onExportKey={() => {
+                  setSelectedDeposit(depositIndex);
+                  setShowExportKeyModal(true);
                 }}
               />
             ))}
@@ -101,6 +107,16 @@ export default function DepositsList() {
           onTopUpSuccess={() => {
             refetchDepositCount();
             setRefetchTrigger(prev => prev + 1);
+          }}
+        />
+      )}
+
+      {showExportKeyModal && selectedDeposit !== null && (
+        <ExportKeyModal
+          reserveIndex={selectedDeposit}
+          onClose={() => {
+            setShowExportKeyModal(false);
+            setSelectedDeposit(null);
           }}
         />
       )}

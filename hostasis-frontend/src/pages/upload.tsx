@@ -2,17 +2,20 @@ import type { NextPage } from 'next';
 import Head from 'next/head';
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { useAccount, useWalletClient, usePublicClient } from 'wagmi';
+import { useAccount, useWalletClient, usePublicClient, useReadContract } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { formatEther, parseEther, erc20Abi } from 'viem';
 import Navigation from '../components/Navigation';
-import { BZZ_ADDRESS } from '../contracts/addresses';
+import { BZZ_ADDRESS, POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
+import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
+import PostageStampABI from '../contracts/abis/PostageStamp.json';
 import FileDropZone from '../components/FileDropZone';
 import { useStorageCalculator } from '../hooks/useStorageCalculator';
 import { useSwapDAIForBZZ } from '../hooks/useSwapDAIForBZZ';
 import { usePasskeyWallet } from '../hooks/usePasskeyWallet';
 import { usePasskeyBatchCreation } from '../hooks/usePasskeyBatchCreation';
 import { useStampedUpload } from '../hooks/useStampedUpload';
+import { useFeedService } from '../hooks/useFeedService';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
 import { getPlanTierName } from '../utils/storagePlan';
@@ -26,6 +29,7 @@ interface UploadState {
   step: UploadStep;
   batchId?: string;
   swarmUrl?: string;
+  swarmReference?: string; // Raw Swarm hash for feed updates
   isSPA?: boolean; // Single Page App mode
 }
 
@@ -40,6 +44,37 @@ const Upload: NextPage = () => {
   });
 
   const [currentAction, setCurrentAction] = useState('');
+  
+  // For updating existing reserves
+  const reserveId = typeof router.query.reserveId === 'string' ? parseInt(router.query.reserveId) : undefined;
+  const feedService = useFeedService();
+  const [stableUrl, setStableUrl] = useState<string | null>(null);
+  const [isDeployingToFeed, setIsDeployingToFeed] = useState(false);
+
+  // Fetch existing reserve info if updating
+  const { data: existingDeposit } = useReadContract({
+    address: POSTAGE_MANAGER_ADDRESS,
+    abi: PostageManagerABI,
+    functionName: 'getUserDeposit',
+    args: address && reserveId !== undefined ? [address, BigInt(reserveId)] : undefined,
+    query: {
+      enabled: !!address && reserveId !== undefined,
+    },
+  });
+
+  // Extract stamp ID from existing deposit
+  const existingStampId = existingDeposit ? (existingDeposit as any).stampId : undefined;
+
+  // Fetch stamp depth for existing reserve
+  const { data: existingStampDepth } = useReadContract({
+    address: POSTAGE_STAMP_ADDRESS,
+    abi: PostageStampABI,
+    functionName: 'batchDepth',
+    args: existingStampId ? [existingStampId.startsWith('0x') ? existingStampId : `0x${existingStampId}`] : undefined,
+    query: {
+      enabled: !!existingStampId,
+    },
+  });
 
   // Debug mode: allow reusing existing stamp via ?debugBatchId=xxx&debugDepth=20
   const debugBatchId = typeof router.query.debugBatchId === 'string' ? router.query.debugBatchId : undefined;
@@ -108,6 +143,58 @@ const Upload: NextPage = () => {
       }
 
       console.log('Passkey wallet ready:', passkeyInfo.address);
+
+      // UPDATE MODE: If updating existing reserve, use existing stamp
+      if (reserveId !== undefined && existingStampId && existingStampDepth) {
+        console.log('📝 UPDATE MODE: Using existing stamp from reserve', { reserveId, existingStampId, existingStampDepth });
+        setState(prev => ({ ...prev, step: 'upload', batchId: existingStampId }));
+        setCurrentAction('Uploading with existing stamp...');
+
+        const normalizedStampId = existingStampId.replace(/^0x/, '');
+        const result = await uploadWithStamper(
+          state.files,
+          normalizedStampId,
+          passkeyInfo.privateKey,
+          Number(existingStampDepth),
+          undefined, // gatewayUrl - use default
+          { isSPA: state.isSPA }
+        );
+
+        // Save upload record for history tracking
+        const isWebsite = state.files.some(f =>
+          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+        );
+        const indexDocument = state.files.find(f =>
+          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+        )?.name;
+        const filename = state.files.length === 1 ? state.files[0].name : undefined;
+
+        saveUpload({
+          batchId: existingStampId,
+          reference: result.reference,
+          files: state.files.map(f => ({
+            name: f.name,
+            size: f.size,
+            type: f.type
+          })),
+          totalSize: state.totalSize,
+          metadata: {
+            isWebsite,
+            indexDocument,
+            filename,
+            isSPA: state.isSPA
+          }
+        });
+
+        setState(prev => ({
+          ...prev,
+          step: 'complete',
+          swarmUrl: result.url,
+          swarmReference: result.reference
+        }));
+
+        return;
+      }
 
       // DEBUG MODE: Skip swap and stamp creation, go straight to upload with existing stamp
       if (isDebugMode && debugBatchId) {
@@ -250,7 +337,7 @@ const Upload: NextPage = () => {
         passkeyPrivateKey: passkeyInfo.privateKey,
         initialBalancePerChunk: calculations.balancePerChunk,
         depth: calculations.depth,
-        immutable: true
+        immutable: false // Allow mutable content for feeds
       });
 
       console.log('Batch created:', { batchId, hash: createHash });
@@ -303,7 +390,8 @@ const Upload: NextPage = () => {
       setState(prev => ({
         ...prev,
         step: 'complete',
-        swarmUrl: uploadResult.url
+        swarmUrl: uploadResult.url,
+        swarmReference: uploadResult.reference
       }));
 
       // Don't auto-redirect - let user test the content first
@@ -323,6 +411,7 @@ const Upload: NextPage = () => {
     });
     resetUpload();
     setCurrentAction('');
+    setStableUrl(null);
   };
 
   const handleRetryUpload = async () => {
@@ -375,7 +464,8 @@ const Upload: NextPage = () => {
       setState(prev => ({
         ...prev,
         step: 'complete',
-        swarmUrl: uploadResult.url
+        swarmUrl: uploadResult.url,
+        swarmReference: uploadResult.reference
       }));
 
       // Don't auto-redirect - let user test the content first
@@ -427,12 +517,22 @@ const Upload: NextPage = () => {
         
         <div className={styles.hero}>
           <h1 className={styles.headline}>
-            Drag &amp; drop. It&apos;s permanent.
+            {reserveId !== undefined ? 'Update your site' : 'Drag & drop. It\'s permanent.'}
           </h1>
           <p className={styles.subheadline}>
-            Drop a folder with your project&apos;s HTML, CSS, and JS files.
-            <br />
-            We&apos;ll give you permanent decentralized hosting.
+            {reserveId !== undefined ? (
+              <>
+                Upload a new version for Reserve #{reserveId}.
+                <br />
+                No additional costs-just drop your updated files.
+              </>
+            ) : (
+              <>
+                Drop a folder with your project&apos;s HTML, CSS, and JS files.
+                <br />
+                We&apos;ll give you permanent decentralized hosting.
+              </>
+            )}
           </p>
         </div>
 
@@ -441,65 +541,101 @@ const Upload: NextPage = () => {
             <FileDropZone onFilesDropped={handleFilesDropped} />
           )}
 
-          {state.step === 'review' && calculations && (
+          {state.step === 'review' && (
             <div className={styles.review}>
-              <div className={styles.reviewHeader}>
-                <h2>Ready to Deploy</h2>
-                <p>Review your upload and costs</p>
-              </div>
-
-              <div className={styles.reviewSummary}>
-                <div className={styles.reviewStat}>
-                  <span className={styles.statLabel}>Files</span>
-                  <span className={styles.statValue}>{state.files.length}</span>
-                </div>
-                <div className={styles.reviewStat}>
-                  <span className={styles.statLabel}>Total Size</span>
-                  <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
-                </div>
-                <div className={styles.reviewStat}>
-                  <span className={styles.statLabel}>Storage</span>
-                  <span className={styles.statValue}>{formatSmartNumber(storageSizeGB)} GB</span>
-                </div>
-              </div>
-
-              <div className={styles.reviewCosts}>
-                <h3>Cost Breakdown</h3>
-
-                {calculations.bzzAmount && (
-                  <div className={styles.costLine}>
-                    <span>BZZ for Stamp (7 days)</span>
-                    <span>{formatSmartNumber(parseFloat(formatBZZ(calculations.bzzAmount)))} BZZ</span>
+              {reserveId !== undefined ? (
+                /* UPDATE MODE - Show simplified review without costs */
+                <>
+                  <div className={styles.reviewHeader}>
+                    <h2>Update Reserve #{reserveId}</h2>
+                    <p>Upload new version to your existing reserve</p>
                   </div>
-                )}
 
-                <div className={styles.costLine}>
-                  <span>Est. xDAI for BZZ Swap</span>
-                  <span>{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
-                </div>
-
-                <div className={styles.costLine}>
-                  <span>Recommended Reserve</span>
-                  <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
-                </div>
-
-                {calculations.depth && getPlanTierName(calculations.depth) && (
-                  <div className={styles.costLine}>
-                    <span>Storage Plan</span>
-                    <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                  <div className={styles.reviewSummary}>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Files</span>
+                      <span className={styles.statValue}>{state.files.length}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Total Size</span>
+                      <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Mode</span>
+                      <span className={styles.statValue}>Update</span>
+                    </div>
                   </div>
-                )}
 
-                <div className={`${styles.costLine} ${styles.costLineTotal}`}>
-                  <span>Total xDAI Needed</span>
-                  <span>{formatSmartNumber(calculations.totalUpfrontCost)} xDAI</span>
-                </div>
+                  <div className={styles.reviewCosts}>
+                    <h3>Using Existing Stamp</h3>
+                    <div className={styles.costNote} style={{ marginTop: '0.5rem' }}>
+                      No additional costs! You're using the existing postage stamp from Reserve #{reserveId}.
+                      Just upload your new files and deploy the update.
+                    </div>
+                  </div>
+                </>
+              ) : calculations ? (
+                /* NEW UPLOAD MODE - Show full cost breakdown */
+                <>
+                  <div className={styles.reviewHeader}>
+                    <h2>Ready to Deploy</h2>
+                    <p>Review your upload and costs</p>
+                  </div>
 
-                <div className={styles.costNote}>
-                  Your reserve generates yield to pay for permanent hosting.
-                  No monthly fees, ever.
-                </div>
-              </div>
+                  <div className={styles.reviewSummary}>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Files</span>
+                      <span className={styles.statValue}>{state.files.length}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Total Size</span>
+                      <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
+                    </div>
+                    <div className={styles.reviewStat}>
+                      <span className={styles.statLabel}>Storage</span>
+                      <span className={styles.statValue}>{formatSmartNumber(storageSizeGB)} GB</span>
+                    </div>
+                  </div>
+
+                  <div className={styles.reviewCosts}>
+                    <h3>Cost Breakdown</h3>
+
+                    {calculations.bzzAmount && (
+                      <div className={styles.costLine}>
+                        <span>BZZ for Stamp (7 days)</span>
+                        <span>{formatSmartNumber(parseFloat(formatBZZ(calculations.bzzAmount)))} BZZ</span>
+                      </div>
+                    )}
+
+                    <div className={styles.costLine}>
+                      <span>Est. xDAI for BZZ Swap</span>
+                      <span>{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
+                    </div>
+
+                    <div className={styles.costLine}>
+                      <span>Recommended Reserve</span>
+                      <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
+                    </div>
+
+                    {calculations.depth && getPlanTierName(calculations.depth) && (
+                      <div className={styles.costLine}>
+                        <span>Storage Plan</span>
+                        <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                      </div>
+                    )}
+
+                    <div className={`${styles.costLine} ${styles.costLineTotal}`}>
+                      <span>Total xDAI Needed</span>
+                      <span>{formatSmartNumber(calculations.totalUpfrontCost)} xDAI</span>
+                    </div>
+
+                    <div className={styles.costNote}>
+                      Your reserve generates yield to pay for permanent hosting.
+                      No monthly fees, ever.
+                    </div>
+                  </div>
+                </>
+              ) : null}
 
               {/* SPA Option - only show if uploading a website with index.html */}
               {state.files.some(f => 
@@ -532,7 +668,7 @@ const Upload: NextPage = () => {
                     className={styles.ctaButton}
                     disabled={isProcessing}
                   >
-                    {isProcessing ? 'Processing...' : 'Deploy to Swarm'}
+                    {isProcessing ? 'Processing...' : reserveId !== undefined ? 'Upload Update' : 'Deploy to Swarm'}
                   </button>
                   <button
                     onClick={handleReset}
@@ -597,34 +733,107 @@ const Upload: NextPage = () => {
           {state.step === 'complete' && (
             <div className={styles.complete}>
               <div className={styles.completeIcon}>✓</div>
-              <h2>Deployed Successfully!</h2>
+              <h2>Uploaded Successfully!</h2>
               <p>
                 Your files are now on the Swarm network.
               </p>
               {state.swarmUrl && (
                 <div className={styles.completeActions}>
                   <a href={state.swarmUrl} target="_blank" rel="noopener noreferrer" className={styles.swarmLink}>
-                    View on Swarm
+                    Preview
                   </a>
 
-                  <div className={styles.reservePrompt}>
-                    <p className={styles.reserveMessage}>
-                      <strong>Almost done!</strong> Create a reserve to make your upload permanent.
-                    </p>
-                    <button
-                      onClick={() => {
-                        // Use the recommended reserve amount that was already calculated and shown to user
-                        const recommendedReserve = calculations?.recommendedReserve.toFixed(2) || '0';
+                  {/* Show live URL if we deployed to an existing feed */}
+                  {stableUrl && (
+                    <div className={styles.reservePrompt} style={{ background: 'rgba(74, 222, 128, 0.1)', borderColor: '#4ade80' }}>
+                      <p className={styles.reserveMessage} style={{ color: '#4ade80' }}>
+                        <strong>✓ Deployed!</strong> Live URL:
+                      </p>
+                      <a 
+                        href={stableUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={{ 
+                          display: 'block',
+                          marginTop: '0.5rem',
+                          padding: '0.75rem 1rem',
+                          background: 'rgba(74, 158, 255, 0.1)',
+                          borderRadius: '8px',
+                          color: '#4a9eff',
+                          wordBreak: 'break-all',
+                          fontFamily: 'monospace',
+                          fontSize: '0.85rem',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        {stableUrl}
+                      </a>
+                    </div>
+                  )}
 
-                        router.push(
-                          `/reserves?stampId=${state.batchId}&amount=${recommendedReserve}`
-                        );
-                      }}
-                      className={styles.createReserveButton}
-                    >
-                      Create Reserve
-                    </button>
-                  </div>
+                  {/* Show reserve creation prompt for new uploads (no reserveId) */}
+                  {!reserveId && !stableUrl && (
+                    <div className={styles.reservePrompt}>
+                      <p className={styles.reserveMessage}>
+                        <strong>Almost done!</strong> Create a reserve to enable updates and get a live URL.
+                      </p>
+                      <button
+                        onClick={() => {
+                          // Use the recommended reserve amount that was already calculated and shown to user
+                          const recommendedReserve = calculations?.recommendedReserve.toFixed(2) || '0';
+
+                          // Include contentHash so the feed can be initialized after reserve creation
+                          router.push(
+                            `/reserves?stampId=${state.batchId}&amount=${recommendedReserve}&contentHash=${state.swarmReference}`
+                          );
+                        }}
+                        className={styles.createReserveButton}
+                      >
+                        Create Reserve & Get Live URL
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Show deploy to feed button if user came with reserveId but hasn't deployed yet */}
+                  {reserveId !== undefined && !stableUrl && !isDeployingToFeed && feedService.hasFeed(reserveId) && state.batchId && (
+                    <div className={styles.reservePrompt}>
+                      <p className={styles.reserveMessage}>
+                        <strong>Deploy to Feed</strong>
+                      </p>
+                      <p className={styles.reserveMessage} style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                        Check the preview above. If it looks good, deploy to make it live.
+                      </p>
+                      <button
+                        onClick={async () => {
+                          if (!state.swarmReference || !state.batchId || !existingStampDepth) return;
+                          setIsDeployingToFeed(true);
+                          try {
+                            await feedService.deployVersion(
+                              reserveId,
+                              state.batchId,
+                              Number(existingStampDepth),
+                              state.swarmReference
+                            );
+                            const url = feedService.getFeedManifestUrl(reserveId);
+                            setStableUrl(url);
+                          } catch (err) {
+                            console.error('Failed to deploy to feed:', err);
+                          } finally {
+                            setIsDeployingToFeed(false);
+                          }
+                        }}
+                        className={styles.ctaButton}
+                      >
+                        Deploy
+                      </button>
+                    </div>
+                  )}
+
+                  {isDeployingToFeed && (
+                    <div className={styles.reservePrompt}>
+                      <p className={styles.reserveMessage}>Deploying to feed...</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

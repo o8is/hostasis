@@ -8,20 +8,38 @@ import Navigation from '../components/Navigation';
 import DepositsList from '../components/DepositsList';
 import EmptyReservesState from '../components/EmptyReservesState';
 import CreateReserveModal from '../components/CreateReserveModal';
+import { useFeedService } from '../hooks/useFeedService';
 import styles from './reserves.module.css';
-import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
+import { POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS, GNOSIS_RPC_URL } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
+import PostageStampABI from '../contracts/abis/PostageStamp.json';
+import { createPublicClient, http } from 'viem';
+import { gnosis } from 'viem/chains';
+
+// Create public client for reading stamp depth
+const publicClient = createPublicClient({
+  chain: gnosis,
+  transport: http(GNOSIS_RPC_URL),
+});
 
 const ReservesPage: NextPage = () => {
   const { isConnected, address } = useAccount();
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  
+  // Feed service for live URLs
+  const feedService = useFeedService();
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [isInitializingFeed, setIsInitializingFeed] = useState(false);
 
   // Get amount from query string (e.g., /reserves?amount=100)
   const initialAmount = typeof router.query.amount === 'string' ? router.query.amount : undefined;
   // Get stampId from query string (e.g., /reserves?stampId=0x...)
   const initialStampId = typeof router.query.stampId === 'string' ? router.query.stampId : undefined;
+  // Get contentHash from query string (e.g., /reserves?contentHash=abc123...)
+  const initialContentHash = typeof router.query.contentHash === 'string' ? router.query.contentHash : undefined;
 
   // Get deposit count to determine empty state
   const { data: depositCount, refetch: refetchDepositCount } = useReadContract({
@@ -47,7 +65,48 @@ const ReservesPage: NextPage = () => {
     refetchDepositCount();
     setRefreshKey((prev) => prev + 1);
     // Clear the query string after successful creation
-    if (initialAmount || initialStampId) {
+    if (initialAmount || initialStampId || initialContentHash) {
+      router.replace('/reserves', undefined, { shallow: true });
+    }
+  };
+
+  // Handle reserve creation with feed initialization
+  const handleCreateSuccessWithIndex = async (reserveIndex: number, stampId: string) => {
+    refetchDepositCount();
+    setRefreshKey((prev) => prev + 1);
+
+    // If we have a content hash, initialize the feed
+    if (initialContentHash) {
+      setIsInitializingFeed(true);
+      setFeedError(null);
+
+      try {
+        // Fetch stamp depth from blockchain
+        const prefixedStampId = stampId.startsWith('0x') ? stampId : `0x${stampId}`;
+        const depth = await publicClient.readContract({
+          address: POSTAGE_STAMP_ADDRESS as `0x${string}`,
+          abi: PostageStampABI,
+          functionName: 'batchDepth',
+          args: [prefixedStampId],
+        });
+
+        // Initialize feed and deploy first version
+        await feedService.initializeFeed(reserveIndex, stampId, Number(depth), initialContentHash);
+        const url = feedService.getFeedManifestUrl(reserveIndex);
+        setLiveUrl(url);
+
+        // Close modal after success
+        setShowCreateModal(false);
+      } catch (err) {
+        console.error('Failed to initialize feed:', err);
+        setFeedError(err instanceof Error ? err.message : 'Failed to initialize feed');
+      } finally {
+        setIsInitializingFeed(false);
+      }
+    }
+    
+    // Clear the query string after successful creation
+    if (initialAmount || initialStampId || initialContentHash) {
       router.replace('/reserves', undefined, { shallow: true });
     }
   };
@@ -55,7 +114,7 @@ const ReservesPage: NextPage = () => {
   const handleCloseModal = () => {
     setShowCreateModal(false);
     // Clear the query string if user closes without creating
-    if (initialAmount || initialStampId) {
+    if (initialAmount || initialStampId || initialContentHash) {
       router.replace('/reserves', undefined, { shallow: true });
     }
   };
@@ -92,10 +151,65 @@ const ReservesPage: NextPage = () => {
             <DepositsList key={refreshKey} />
           </div>
         )}
+        
+        {/* Show URL after successful feed initialization */}
+        {liveUrl && (
+          <div className="info-box" style={{ marginTop: '2rem', textAlign: 'center' }}>
+            <h3 style={{ marginTop: 0, color: '#4ade80' }}>✓ Content Tracking Enabled!</h3>
+            <p className="description">
+              Live URL — update your content anytime from the &quot;Update Site&quot; button:
+            </p>
+            <a
+              href={liveUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'block',
+                marginTop: '1rem',
+                padding: '0.75rem 1rem',
+                background: 'rgba(74, 158, 255, 0.1)',
+                borderRadius: '8px',
+                color: '#4a9eff',
+                wordBreak: 'break-all',
+                fontFamily: 'monospace',
+                fontSize: '0.9rem'
+              }}
+            >
+              {liveUrl}
+            </a>
+            <button
+              onClick={() => setLiveUrl(null)}
+              style={{ marginTop: '1rem' }}
+              className="view-button"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+        
+        {feedError && (
+          <div className="info-box" style={{ marginTop: '2rem', textAlign: 'center', borderColor: '#ef4444' }}>
+            <p style={{ color: '#ef4444', margin: 0 }}>Feed Error: {feedError}</p>
+            <button 
+              onClick={() => setFeedError(null)}
+              style={{ marginTop: '1rem' }}
+              className="view-button"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
       </div>
 
       {showCreateModal && (
-        <CreateReserveModal onClose={handleCloseModal} onSuccess={handleCreateSuccess} initialAmount={initialAmount} initialStampId={initialStampId} />
+        <CreateReserveModal 
+          onClose={handleCloseModal} 
+          onSuccess={initialContentHash ? undefined : handleCreateSuccess}
+          onSuccessWithIndex={initialContentHash ? handleCreateSuccessWithIndex : undefined}
+          initialAmount={initialAmount} 
+          initialStampId={initialStampId}
+          initialContentHash={initialContentHash}
+        />
       )}
     </>
   );

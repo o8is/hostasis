@@ -32,6 +32,40 @@
   font-weight: normal;
 }
 
+.stableUrl {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(74, 158, 255, 0.08);
+  border: 1px solid rgba(74, 158, 255, 0.2);
+  border-radius: 8px;
+}
+
+.stableUrlLabel {
+  font-size: 0.75rem;
+  color: #7a7a7a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.stableUrlLink {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #4a9eff;
+  font-family: monospace;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stableUrlLink:hover {
+  text-decoration: underline;
+}
+
 .content {
   margin-bottom: 1.5rem;
 }
@@ -81,9 +115,14 @@
 }
 
 .actionsSecondary {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.actionsSecondary button {
+  flex: 1;
+  min-width: 100px;
 }
 
 .technical {

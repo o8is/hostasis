@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { Stamper, MantarayNode } from '@ethersphere/bee-js';
-import { Chunk, Binary, MerkleTree } from 'cafe-utility';
+import { Chunk, Binary } from 'cafe-utility';
+import { MerkleTree, getContentType } from '../utils/swarmUpload';
+import { uploadWithMerkleTree, saveMantarayNodeRecursively, buildMantarayManifest } from '../utils/swarmUpload';
 import { type Hex } from 'viem';
 import axios from 'axios';
 import { SWARM_GATEWAY_URL } from '../contracts/addresses';
@@ -104,149 +106,6 @@ async function waitForStampPropagation(
   throw new Error('Stamp propagation check failed');
 }
 
-/**
- * Upload data using MerkleTree chunking and return root hash
- * This properly handles files of any size by creating intermediate chunks
- * Chunks are collected first, then uploaded in true parallel for maximum performance
- */
-async function uploadWithMerkleTree(
-  data: Uint8Array,
-  uploadChunkFn: (chunk: Chunk) => Promise<string>
-): Promise<Uint8Array> {
-  // Collect all chunks first (fast, no I/O)
-  const chunks: Chunk[] = [];
-  const onChunk = async (chunk: Chunk) => {
-    chunks.push(chunk);
-  };
-
-  // Create MerkleTree with collection callback
-  const tree = new MerkleTree(onChunk);
-
-  // Append data to tree (chunks but doesn't upload yet)
-  await tree.append(data);
-
-  // Finalize and get root chunk
-  const rootChunk = await tree.finalize();
-
-  console.log(`📦 File chunked into ${chunks.length} chunks`);
-
-  // Upload ALL chunks in true parallel with Promise.all
-  // Modern browsers use HTTP/2 multiplexing which handles this efficiently
-  // The browser and gateway will manage optimal concurrency automatically
-  await Promise.all(chunks.map(chunk => uploadChunkFn(chunk)));
-
-  const rootHash = rootChunk.hash();
-
-  // Return the root hash (this is the reference)
-  return rootHash;
-}
-
-/**
- * Get MIME type for a file
- */
-function getContentType(filename: string): string {
-  const ext = filename.split('.').pop()?.toLowerCase();
-  const mimeTypes: Record<string, string> = {
-    'html': 'text/html; charset=utf-8',
-    'htm': 'text/html; charset=utf-8',
-    'css': 'text/css; charset=utf-8',
-    'js': 'application/javascript',
-    'json': 'application/json',
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'svg': 'image/svg+xml',
-    'txt': 'text/plain; charset=utf-8',
-    'pdf': 'application/pdf',
-    'zip': 'application/zip'
-  };
-  return mimeTypes[ext || ''] || 'application/octet-stream';
-}
-
-/**
- * Recursively save a MantarayNode with client-side stamping
- * This replicates MantarayNode.saveRecursively but with our custom upload function
- */
-async function saveMantarayNodeRecursively(
-  node: MantarayNode,
-  uploadChunkFn: (chunk: Chunk) => Promise<string>
-): Promise<string> {
-  // First, recursively upload all child nodes
-  for (const fork of node.forks.values()) {
-    await saveMantarayNodeRecursively(fork.node, uploadChunkFn);
-  }
-
-  // Now marshal this node (which will include selfAddresses of children that were just uploaded)
-  const nodeData = await node.marshal();
-
-  // Upload the marshalled node data using MerkleTree
-  const nodeRootHash = await uploadWithMerkleTree(nodeData, uploadChunkFn);
-  const nodeReference = Binary.uint8ArrayToHex(nodeRootHash);
-
-  // Set the selfAddress on this node
-  node.selfAddress = nodeRootHash;
-
-  return nodeReference;
-}
-
-/**
- * Build a Swarm mantaray manifest for a collection of files
- */
-async function buildMantarayManifest(
-  fileEntries: { path: string; reference: string; contentType: string }[], 
-  indexDocument?: string,
-  errorDocument?: string
-): Promise<MantarayNode> {
-  const mantaray = new MantarayNode();
-
-  // Add each file as a fork
-  for (const entry of fileEntries) {
-    // Remove leading slash from path for mantaray
-    const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
-
-    const metadata: Record<string, string> = {
-      'Content-Type': entry.contentType
-    };
-
-    // Add filename metadata
-    if (path) {
-      metadata['Filename'] = path;
-    }
-
-    // Convert hex string to raw Uint8Array bytes (32 bytes)
-    const hexWithoutPrefix = entry.reference.replace(/^0x/, '');
-    const referenceBytes = Binary.hexToUint8Array(hexWithoutPrefix);
-
-    // Pass raw bytes directly - this is what bee-js does with rootChunk.hash()
-    mantaray.addFork(path, referenceBytes, metadata);
-  }
-
-  // Add root path with website metadata if we have an index and/or error document
-  if (indexDocument || errorDocument) {
-    const NULL_ADDRESS = new Uint8Array(32); // 32 bytes of zeros
-    const metadata: Record<string, string> = {};
-    
-    if (indexDocument) {
-      // Remove leading slash from indexDocument to match how paths are stored in manifest
-      const indexDocPath = indexDocument.startsWith('/') ? indexDocument.slice(1) : indexDocument;
-      metadata['website-index-document'] = indexDocPath;
-      console.log('🏠 Setting website index document:', indexDocPath);
-    }
-    
-    if (errorDocument) {
-      // Remove leading slash from errorDocument to match how paths are stored in manifest
-      const errorDocPath = errorDocument.startsWith('/') ? errorDocument.slice(1) : errorDocument;
-      metadata['website-error-document'] = errorDocPath;
-      console.log('❌ Setting website error document:', errorDocPath);
-    }
-    
-    mantaray.addFork('/', NULL_ADDRESS, metadata);
-  }
-
-  // Return the node (we'll upload it recursively later)
-  return mantaray;
-}
 
 /**
  * Hook for uploading files with client-side stamping
