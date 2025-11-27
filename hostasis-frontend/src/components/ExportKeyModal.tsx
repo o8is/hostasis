@@ -43,7 +43,7 @@ export default function ExportKeyModal({ reserveIndex, onClose }: ExportKeyModal
   }, [hasAttempted, feedService, reserveIndex]);
 
   return (
-    <Modal title="Export Feed Key" onClose={onClose}>
+    <Modal title="Export Reserve Key" onClose={onClose}>
       <div className={styles.content}>
         {isLoading && (
           <p className={styles.loading}>Authenticating with passkey...</p>
@@ -52,8 +52,8 @@ export default function ExportKeyModal({ reserveIndex, onClose }: ExportKeyModal
         {error && (
           <div className={styles.errorContainer}>
             <p className={styles.error}>{error}</p>
-            <button 
-              className="view-button" 
+            <button
+              className="view-button"
               onClick={() => {
                 setHasAttempted(false);
                 setError(null);
@@ -67,12 +67,14 @@ export default function ExportKeyModal({ reserveIndex, onClose }: ExportKeyModal
         {keyInfo && (
           <>
             <p className={styles.description}>
-              Use this key to update your site from CI/CD pipelines or the CLI.
+              This key owns your reserve&apos;s batch and can upload files and update your feed.
+              <br />
+              Use it in CI/CD pipelines or with the Hostasis CLI.
               <strong> Keep it secret!</strong>
             </p>
 
             <div className={styles.field}>
-              <label className={styles.fieldLabel}>Feed Address</label>
+              <label className={styles.fieldLabel}>Reserve Address</label>
               <div className={styles.fieldValue}>
                 <code className={styles.code}>{keyInfo.address}</code>
                 <CopyButton text={keyInfo.address} label="Address" />
@@ -80,14 +82,14 @@ export default function ExportKeyModal({ reserveIndex, onClose }: ExportKeyModal
             </div>
 
             <div className={styles.field}>
-              <label className={styles.fieldLabel}>Private Key</label>
+              <label className={styles.fieldLabel}>Reserve Private Key</label>
               <div className={styles.fieldValue}>
                 {showPrivateKey ? (
                   <code className={styles.code}>{keyInfo.privateKey}</code>
                 ) : (
                   <code className={styles.code}>••••••••••••••••••••••••••••••••</code>
                 )}
-                <button 
+                <button
                   className={styles.toggleButton}
                   onClick={() => setShowPrivateKey(!showPrivateKey)}
                 >
@@ -100,17 +102,22 @@ export default function ExportKeyModal({ reserveIndex, onClose }: ExportKeyModal
             <div className={styles.warning}>
               <strong>⚠️ Security Warning</strong>
               <p>
-                Anyone with this key can update your site. Store it securely as an 
-                environment variable or secret in your CI/CD system.
+                This key can upload to your batch and update your feed. Anyone with this
+                key can modify your site. Store it securely as a secret in your CI/CD system.
               </p>
             </div>
 
             <div className={styles.usage}>
-              <label className={styles.fieldLabel}>Example Usage (CLI)</label>
+              <label className={styles.fieldLabel}>Example Usage (Coming Soon)</label>
               <pre className={styles.codeBlock}>
-{`# Using bee-js CLI
-export FEED_KEY="${keyInfo.privateKey}"
-bee feed update --topic 0x0...0 --reference <new_hash>`}
+{`# Upload and update feed with Hostasis CLI
+export HOSTASIS_RESERVE_KEY="${keyInfo.privateKey}"
+
+# Upload files
+hostasis upload ./dist --batch-id <your-batch-id>
+
+# Update feed
+hostasis feed update --reference <swarm-hash>`}
               </pre>
             </div>
           </>

@@ -9,7 +9,7 @@ import { FileList } from './FileList'
 import { getUploadsByBatchId, type UploadRecord } from '../utils/uploadHistory'
 import { useStampInfo, formatTimeRemaining } from '../hooks/useStampInfo'
 import { useFeedService } from '../hooks/useFeedService'
-import { hasFeed as checkHasFeed, getCurrentFeedIndex } from '../utils/feedStorage'
+import { hasFeed as checkHasFeed } from '../utils/feedStorage'
 
 type Deposit = {
   sDAIAmount: bigint
@@ -43,6 +43,7 @@ export default function DepositCard({
   const [uploads, setUploads] = useState<UploadRecord[]>([])
   const [isInitializing, setIsInitializing] = useState(false)
   const [feedUrl, setFeedUrl] = useState<string | null>(null)
+  const [currentFeedIndex, setCurrentFeedIndex] = useState<number | null>(null)
   const feedService = useFeedService()
   const feedExists = checkHasFeed(depositIndex)
 
@@ -66,6 +67,17 @@ export default function DepositCard({
       setFeedUrl(manifestUrl)
     }
   }, [feedExists, depositIndex, feedService])
+
+  // Fetch current feed index from Swarm gateway
+  useEffect(() => {
+    if (feedExists) {
+      feedService.fetchCurrentFeedIndex(depositIndex).then(index => {
+        if (index !== null) {
+          setCurrentFeedIndex(index)
+        }
+      })
+    }
+  }, [feedExists, depositIndex, feedService, refetchTrigger])
 
   // Refetch when trigger changes
   useEffect(() => {
@@ -110,9 +122,9 @@ export default function DepositCard({
         <div className={styles.stableUrl}>
           <div className={styles.stableUrlLabel}>
             Live URL
-            {feedExists && (
+            {feedExists && currentFeedIndex !== null && (
               <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', opacity: 0.7 }}>
-                (v{getCurrentFeedIndex(depositIndex)})
+                (v{currentFeedIndex})
               </span>
             )}
           </div>

@@ -333,6 +333,34 @@ function getFeedUrl(reserveIndex: number): string | null {
 }
 
 /**
+ * Fetch the current feed index from the Swarm gateway
+ * Returns the latest index from the feed endpoint, or null if not found
+ */
+async function fetchFeedIndex(reserveIndex: number): Promise<number | null> {
+  const feedUrl = getFeedUrl(reserveIndex);
+  if (!feedUrl) return null;
+
+  try {
+    const response = await fetch(feedUrl);
+    if (!response.ok) {
+      // Feed not found or error
+      return null;
+    }
+
+    // The feed endpoint returns the latest update with swarm-feed-index header
+    const indexHeader = response.headers.get('swarm-feed-index');
+    if (indexHeader) {
+      return parseInt(indexHeader, 10);
+    }
+
+    return null;
+  } catch (err) {
+    console.error('[fetchFeedIndex] Error fetching feed index:', err);
+    return null;
+  }
+}
+
+/**
  * Create and upload a feed manifest for a feed
  * A feed manifest uses special metadata to reference a feed by owner and topic
  * Returns the manifest reference (hash)
@@ -473,8 +501,9 @@ export function useFeedService() {
       const initialRef = contentHash || '0'.repeat(64);
       
       // Write initial feed update at index 0
-      // We pass passkeyPrivateKey as the stampPrivateKey because the passkey wallet owns the stamp
-      await writeFeedUpdate(feedPrivateKey, initialRef, 0, stampId, depth, passkeyPrivateKey);
+      // We pass feedPrivateKey as the stampPrivateKey because the reserve key owns the stamp
+      const feedPrivateKeyHex = `0x${bytesToHex(feedPrivateKey)}`;
+      await writeFeedUpdate(feedPrivateKey, initialRef, 0, stampId, depth, feedPrivateKeyHex);
 
       // Save owner address to feedStorage for persistence (used to construct feed URL)
       const ownerHex = bytesToHex(owner);
@@ -489,7 +518,7 @@ export function useFeedService() {
       // Use the correct uploadChunk from useStampedUpload
       const uploadChunk = async (chunk: any) => {
         // Use the same logic as in useStampedUpload
-        const results = await uploadWithStamper([chunk], stampId, passkeyPrivateKey, depth);
+        const results = await uploadWithStamper([chunk], stampId, feedPrivateKeyHex, depth);
         return results[0]; // Return the first (and only) result
       };
 
@@ -546,9 +575,10 @@ export function useFeedService() {
       const feedIndex = currentIndex + 1;
 
       console.log('[FeedService] Current index:', currentIndex, '→ Deploying to index:', feedIndex);
-      
-      // We pass passkeyPrivateKey as the stampPrivateKey because the passkey wallet owns the stamp
-      await writeFeedUpdate(feedPrivateKey, contentHash, feedIndex, stampId, depth, passkeyPrivateKey);
+
+      // We pass feedPrivateKey as the stampPrivateKey because the reserve key owns the stamp
+      const feedPrivateKeyHex = `0x${bytesToHex(feedPrivateKey)}`;
+      await writeFeedUpdate(feedPrivateKey, contentHash, feedIndex, stampId, depth, feedPrivateKeyHex);
 
       // Save to feedStorage for persistence
       setCurrentVersion(reserveIndex, contentHash);
@@ -600,6 +630,13 @@ export function useFeedService() {
     return getStoredManifestUrl(reserveIndex);
   }, []);
 
+  /**
+   * Fetch the current feed index from Swarm gateway
+   */
+  const fetchCurrentFeedIndex = useCallback(async (reserveIndex: number): Promise<number | null> => {
+    return fetchFeedIndex(reserveIndex);
+  }, []);
+
   return {
     isLoading,
     error,
@@ -610,6 +647,7 @@ export function useFeedService() {
     getFeedManifestUrl,
     hasFeed,
     exportFeedKey,
+    fetchCurrentFeedIndex,
   };
 }
 

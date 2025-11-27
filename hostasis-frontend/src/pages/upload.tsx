@@ -11,17 +11,17 @@ import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
 import FileDropZone from '../components/FileDropZone';
 import { useStorageCalculator } from '../hooks/useStorageCalculator';
-import { useSwapDAIForBZZ } from '../hooks/useSwapDAIForBZZ';
 import { usePasskeyWallet } from '../hooks/usePasskeyWallet';
-import { usePasskeyBatchCreation } from '../hooks/usePasskeyBatchCreation';
+import { useReserveWalletBatchCreation } from '../hooks/useReserveWalletBatchCreation';
 import { useStampedUpload } from '../hooks/useStampedUpload';
 import { useFeedService } from '../hooks/useFeedService';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
 import { getPlanTierName } from '../utils/storagePlan';
+import { deriveReserveKey } from '../utils/reserveKeys';
 import styles from './upload.module.css';
 
-type UploadStep = 'drop' | 'review' | 'passkey' | 'swap' | 'gas-transfer' | 'create-batch' | 'upload' | 'complete';
+type UploadStep = 'drop' | 'review' | 'passkey' | 'create-batch' | 'upload' | 'complete';
 
 interface UploadState {
   files: File[];
@@ -31,6 +31,7 @@ interface UploadState {
   swarmUrl?: string;
   swarmReference?: string; // Raw Swarm hash for feed updates
   isSPA?: boolean; // Single Page App mode
+  reserveIndex?: number; // Track reserve index for retry functionality
 }
 
 const Upload: NextPage = () => {
@@ -82,7 +83,6 @@ const Upload: NextPage = () => {
   const isDebugMode = !!debugBatchId;
 
   const { calculate, bzzPriceUSD } = useStorageCalculator();
-  const { getQuote, approveDAI, executeSwap, isApproving: isSwapApproving, isSwapping } = useSwapDAIForBZZ();
 
   // Passkey wallet hooks
   const {
@@ -94,8 +94,26 @@ const Upload: NextPage = () => {
     error: passkeyError
   } = usePasskeyWallet();
 
-  const { createBatchWithPasskey, isCreating: isBatchCreating } = usePasskeyBatchCreation();
+  const { createBatchWithReserveWallet, isCreating: isBatchCreating, currentStep } = useReserveWalletBatchCreation();
   const { uploadWithStamper, progress: uploadProgress, error: uploadError, reset: resetUpload } = useStampedUpload();
+
+  // Monitor reserve wallet batch creation substeps
+  useEffect(() => {
+    if (isBatchCreating && currentStep) {
+      setCurrentAction(currentStep);
+    }
+  }, [currentStep, isBatchCreating]);
+
+  // Get user's deposit count to derive next reserve index
+  const { data: depositCount } = useReadContract({
+    address: POSTAGE_MANAGER_ADDRESS,
+    abi: PostageManagerABI,
+    functionName: 'getUserDepositCount',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  });
 
   // Viem clients for gas transfer
   const { data: walletClient } = useWalletClient();
@@ -148,13 +166,17 @@ const Upload: NextPage = () => {
       if (reserveId !== undefined && existingStampId && existingStampDepth) {
         console.log('📝 UPDATE MODE: Using existing stamp from reserve', { reserveId, existingStampId, existingStampDepth });
         setState(prev => ({ ...prev, step: 'upload', batchId: existingStampId }));
-        setCurrentAction('Uploading with existing stamp...');
+        setCurrentAction('Uploading with reserve key...');
+
+        // Derive reserve key for this specific reserve
+        const reserveKey = deriveReserveKey(passkeyInfo.privateKey, reserveId);
+        console.log('Using reserve key:', reserveKey.address);
 
         const normalizedStampId = existingStampId.replace(/^0x/, '');
         const result = await uploadWithStamper(
           state.files,
           normalizedStampId,
-          passkeyInfo.privateKey,
+          reserveKey.privateKey, // Use reserve key instead of passkey
           Number(existingStampDepth),
           undefined, // gatewayUrl - use default
           { isSPA: state.isSPA }
@@ -254,96 +276,42 @@ const Upload: NextPage = () => {
         throw new Error('Calculation data not available. Please try again.');
       }
 
-      // Check passkey wallet balances
-      const [passkeyBzzBalance, passkeyXdaiBalance] = await Promise.all([
-        publicClient.readContract({
-          address: BZZ_ADDRESS,
-          abi: erc20Abi,
-          functionName: 'balanceOf',
-          args: [passkeyInfo.address]
-        }) as Promise<bigint>,
-        publicClient.getBalance({ address: passkeyInfo.address })
-      ]);
-
-      console.log('Passkey wallet balances:', {
-        bzz: formatBZZ(passkeyBzzBalance),
-        xdai: formatEther(passkeyXdaiBalance)
-      });
-
-      // Step 2: Swap for BZZ if needed
-      const bzzNeeded = calculations.bzzAmount;
-      const needsSwap = passkeyBzzBalance < bzzNeeded;
-      if (needsSwap) {
-        setState(prev => ({ ...prev, step: 'swap' }));
-        setCurrentAction('Getting swap quote...');
-        // Use the initialStampCost in DAI from calculations
-        const daiAmountStr = calculations.initialStampCost.toFixed(6);
-        const quote = await getQuote(daiAmountStr, true, passkeyInfo.address); // Send BZZ to passkey
-
-        // If using wrapped DAI, check/approve. Native xDAI needs no approval.
-        if (!quote.isNative) {
-          setCurrentAction('Checking DAI allowance...');
-          const approveHash = await approveDAI(quote.amountIn, quote.tx.to);
-          if (approveHash) {
-            setCurrentAction('Waiting for DAI approval confirmation...');
-            await new Promise(resolve => setTimeout(resolve, 10000));
-          } else {
-            setCurrentAction('DAI already approved');
-          }
-        }
-
-        // Execute swap (BZZ sent directly to passkey wallet)
-        setCurrentAction('Swapping xDAI for BZZ (to passkey wallet)...');
-        const swapHash = await executeSwap(quote);
-        setCurrentAction('Waiting for swap confirmation...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
-      } else {
-        console.log('Passkey wallet has enough BZZ, skipping swap');
-      }
-
-      // Step 3: Send gas money if needed
-      const gasAmount = parseEther('0.001');
-      const needsGas = passkeyXdaiBalance < gasAmount;
-
-      if (needsGas) {
-        setState(prev => ({ ...prev, step: 'gas-transfer' }));
-        setCurrentAction('Sending gas to passkey wallet...');
-
-        if (!walletClient) {
-          throw new Error('Wallet client not available');
-        }
-
-        const gasHash = await walletClient.sendTransaction({
-          to: passkeyInfo.address,
-          value: gasAmount,
-        });
-
-        setCurrentAction('Waiting for gas transfer confirmation...');
-        await publicClient.waitForTransactionReceipt({ hash: gasHash });
-      } else {
-        console.log('Passkey wallet has enough xDAI for gas, skipping gas transfer');
-      }
-
-      // Step 6: Create batch with passkey wallet
+      // Step 2: Create batch with reserve wallet
       setState(prev => ({ ...prev, step: 'create-batch' }));
 
       if (!calculations.depth || !calculations.balancePerChunk) {
         throw new Error('Batch parameters not calculated. Please try again.');
       }
 
-      setCurrentAction('Creating postage stamp with passkey wallet...');
+      if (!walletClient) {
+        throw new Error('Wallet client not available');
+      }
 
-      const { hash: createHash, batchId } = await createBatchWithPasskey({
-        passkeyPrivateKey: passkeyInfo.privateKey,
+      // Calculate next reserve index
+      const nextReserveIndex = depositCount ? Number(depositCount) : 0;
+      console.log('Creating batch for reserve index:', nextReserveIndex);
+
+      // Derive reserve key for this reserve
+      const reserveKey = deriveReserveKey(passkeyInfo.privateKey, nextReserveIndex);
+      console.log('Reserve key address:', reserveKey.address);
+
+      // Calculate total xDAI needed (stamp cost + gas buffer)
+      const totalXDAI = (calculations.initialStampCost + 0.01).toFixed(6); // Add 0.01 xDAI for gas
+
+      setCurrentAction('Creating postage stamp with reserve wallet...');
+
+      const { hash: createHash, batchId } = await createBatchWithReserveWallet({
+        reservePrivateKey: reserveKey.privateKey,
+        totalXDAI,
         initialBalancePerChunk: calculations.balancePerChunk,
         depth: calculations.depth,
         immutable: false // Allow mutable content for feeds
       });
 
       console.log('Batch created:', { batchId, hash: createHash });
-      setState(prev => ({ ...prev, batchId }));
+      setState(prev => ({ ...prev, batchId, reserveIndex: nextReserveIndex }));
 
-      // Step 7: Upload to Swarm with client-side stamping
+      // Step 3: Upload to Swarm with client-side stamping
       setState(prev => ({ ...prev, step: 'upload' }));
       setCurrentAction('Uploading with client-side stamping...');
 
@@ -352,11 +320,13 @@ const Upload: NextPage = () => {
       const uploadResult = await uploadWithStamper(
         state.files,
         normalizedBatchId,
-        passkeyInfo.privateKey,
+        reserveKey.privateKey, // Use reserve key instead of passkey
         calculations.depth,
         undefined, // gatewayUrl - use default
         { isSPA: state.isSPA }
       );
+
+      console.log('Upload complete:', { reference: uploadResult.reference, url: uploadResult.url, cid: uploadResult.cid });
 
       // Save upload record for history tracking
       const isWebsite = state.files.some(f =>
@@ -423,14 +393,27 @@ const Upload: NextPage = () => {
 
       const normalizedBatchId = state.batchId.replace(/^0x/, '');
 
+      // Re-derive reserve key if we have reserve index
+      let uploadPrivateKey = passkeyWallet.privateKey;
+
+      if (state.reserveIndex !== undefined) {
+        const reserveKey = deriveReserveKey(passkeyWallet.privateKey, state.reserveIndex);
+        uploadPrivateKey = reserveKey.privateKey;
+        console.log('Retry: Using reserve key for reserve index:', state.reserveIndex);
+      } else {
+        console.warn('Retry: No reserve index found, using passkey wallet (may fail for new uploads)');
+      }
+
       const uploadResult = await uploadWithStamper(
         state.files,
         normalizedBatchId,
-        passkeyWallet.privateKey,
+        uploadPrivateKey, // Use correct key
         calculations.depth,
         undefined, // gatewayUrl - use default
         { isSPA: state.isSPA }
       );
+
+      console.log('Retry upload complete:', { reference: uploadResult.reference, url: uploadResult.url, cid: uploadResult.cid });
 
       // Save upload record for history tracking
       const isWebsite = state.files.some(f =>
@@ -493,7 +476,7 @@ const Upload: NextPage = () => {
     return value.toExponential(2);
   };
 
-  const isProcessing = isAuthenticating || isSwapApproving || isSwapping || isBatchCreating ||
+  const isProcessing = isAuthenticating || isBatchCreating ||
     uploadProgress.phase === 'chunking' || uploadProgress.phase === 'stamping' || uploadProgress.phase === 'uploading';
 
   return (
@@ -569,7 +552,7 @@ const Upload: NextPage = () => {
                   <div className={styles.reviewCosts}>
                     <h3>Using Existing Stamp</h3>
                     <div className={styles.costNote} style={{ marginTop: '0.5rem' }}>
-                      No additional costs! You're using the existing postage stamp from Reserve #{reserveId}.
+                      No additional costs! {"You're"} using the existing postage stamp from Reserve #{reserveId}.
                       Just upload your new files and deploy the update.
                     </div>
                   </div>
@@ -682,7 +665,7 @@ const Upload: NextPage = () => {
             </div>
           )}
 
-          {(state.step === 'passkey' || state.step === 'swap' || state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') && (
+          {(state.step === 'passkey' || state.step === 'create-batch' || state.step === 'upload') && (
             <div className={styles.progress}>
               <div className={styles.progressHeader}>
                 <h2>Deploying...</h2>
@@ -690,24 +673,36 @@ const Upload: NextPage = () => {
               </div>
 
               <div className={styles.progressSteps}>
-                <div className={`${styles.progressStep} ${state.step === 'passkey' ? styles.progressStepActive : (state.step === 'swap' || state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                <div className={`${styles.progressStep} ${state.step === 'passkey' ? styles.progressStepActive : (state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
                   <div className={styles.stepNumber}>1</div>
                   <div className={styles.stepLabel}>Passkey Auth</div>
                 </div>
-                <div className={`${styles.progressStep} ${state.step === 'swap' ? styles.progressStepActive : (state.step === 'gas-transfer' || state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                <div className={`${styles.progressStep} ${
+                  state.step === 'create-batch' && (
+                    currentStep?.includes('Transferring') ||
+                    currentStep?.includes('Getting swap') ||
+                    currentStep?.includes('Swapping')
+                  ) ? styles.progressStepActive : (
+                    (state.step === 'create-batch' && (
+                      currentStep?.includes('Approving') ||
+                      currentStep?.includes('Creating postage')
+                    )) || state.step === 'upload'
+                  ) ? styles.progressStepComplete : ''
+                }`}>
                   <div className={styles.stepNumber}>2</div>
-                  <div className={styles.stepLabel}>Swap → Passkey</div>
+                  <div className={styles.stepLabel}>Fund Reserve</div>
                 </div>
-                <div className={`${styles.progressStep} ${state.step === 'gas-transfer' ? styles.progressStepActive : (state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                <div className={`${styles.progressStep} ${
+                  state.step === 'create-batch' && (
+                    currentStep?.includes('Approving') ||
+                    currentStep?.includes('Creating postage')
+                  ) ? styles.progressStepActive : state.step === 'upload' ? styles.progressStepComplete : ''
+                }`}>
                   <div className={styles.stepNumber}>3</div>
-                  <div className={styles.stepLabel}>Send Gas</div>
-                </div>
-                <div className={`${styles.progressStep} ${state.step === 'create-batch' ? styles.progressStepActive : state.step === 'upload' ? styles.progressStepComplete : ''}`}>
-                  <div className={styles.stepNumber}>4</div>
                   <div className={styles.stepLabel}>Create Stamp</div>
                 </div>
                 <div className={`${styles.progressStep} ${state.step === 'upload' ? styles.progressStepActive : ''}`}>
-                  <div className={styles.stepNumber}>5</div>
+                  <div className={styles.stepNumber}>4</div>
                   <div className={styles.stepLabel}>Upload Files</div>
                 </div>
               </div>
@@ -787,9 +782,10 @@ const Upload: NextPage = () => {
                             `/reserves?stampId=${state.batchId}&amount=${recommendedReserve}&contentHash=${state.swarmReference}`
                           );
                         }}
-                        className={styles.createReserveButton}
+                        className={styles.ctaButton}
+                        style={{ width: '100%' }}
                       >
-                        Create Reserve & Get Live URL
+                        Create Reserve
                       </button>
                     </div>
                   )}

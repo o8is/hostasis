@@ -67,17 +67,20 @@ export default function DepositForm({
   // Handle successful deposit
   useEffect(() => {
     if (isDeposited) {
+      // Capture stampId before clearing
+      const currentStampId = stampId;
+
       // Refetch deposit count to get the new reserve index
       refetchDepositCount().then((result) => {
         const newCount = result.data as bigint | undefined;
-        if (newCount !== undefined && onDepositSuccessWithIndex) {
+        if (newCount !== undefined && onDepositSuccessWithIndex && currentStampId) {
           // New reserve index is count - 1 (0-indexed)
           const newReserveIndex = Number(newCount) - 1;
-          const normalizedStampId = ensureBatchIdPrefix(stampId);
+          const normalizedStampId = ensureBatchIdPrefix(currentStampId);
           onDepositSuccessWithIndex(newReserveIndex, normalizedStampId);
         }
       });
-      
+
       if (onDepositSuccess) {
         onDepositSuccess();
       }
@@ -87,7 +90,7 @@ export default function DepositForm({
       setDepositStep('');
       conversion.resetConversion();
     }
-  }, [isDeposited, onDepositSuccess, onDepositSuccessWithIndex, conversion, refetchDepositCount, stampId]);
+  }, [isDeposited, onDepositSuccess, onDepositSuccessWithIndex, conversion, refetchDepositCount]);
 
   // Get balance info based on detected token
   const getBalance = () => {
@@ -256,7 +259,7 @@ export default function DepositForm({
           disabled={!isValidAmount || !isValidStampId || isLoading || !conversion.currentToken}
           style={{ flex: 1 }}
         >
-          {isLoading ? currentStep || 'Processing...' : 'Create Reserve'}
+          {isLoading ? currentStep || 'Processing...' : (initialContentHash ? 'Create Reserve & Deploy' : 'Create Reserve')}
         </button>
       </div>
     </>

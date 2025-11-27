@@ -617,11 +617,6 @@
   margin-top: 0.5rem;
 }
 
-.createReserveButton {
-  width: 100%;
-  justify-content: center;
-}
-
 /* Debug Banner */
 .debugBanner {
   background: #ff6b00;

@@ -94,7 +94,7 @@ export async function uploadWithMerkleTree(
  * Upload one or more chunks to Swarm with client-side stamping
  * @param chunks - Array of Chunk objects (usually length 1 for single chunk)
  * @param batchId - Hex string of the postage batch
- * @param privateKey - Hex string of the user's private key
+ * @param privateKey - Hex string of the batch owner's private key (reserve key, NOT passkey!)
  * @param depth - Batch depth
  * @param gatewayUrl - Optional Swarm gateway URL
  * @returns Array of references (hashes) for uploaded chunks
@@ -102,7 +102,7 @@ export async function uploadWithMerkleTree(
 export async function uploadWithStamper(
   chunks: Chunk[],
   batchId: string,
-  privateKey: string,
+  privateKey: string, // Should be the batch owner (reserve key)
   depth: number,
   gatewayUrl?: string
 ): Promise<string[]> {
