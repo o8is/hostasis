@@ -5,11 +5,13 @@ import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses'
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json'
 import TokenAmount from './TokenAmount'
 import { CopyButton } from './CopyButton'
+import { CopyDropdownButton, type CopyOption } from './CopyDropdownButton'
 import { FileList } from './FileList'
 import { getUploadsByBatchId, type UploadRecord } from '../utils/uploadHistory'
 import { useStampInfo, formatTimeRemaining } from '../hooks/useStampInfo'
 import { useFeedService } from '../hooks/useFeedService'
-import { hasFeed as checkHasFeed } from '../utils/feedStorage'
+import { hasFeed as checkHasFeed, getCurrentVersion, getFeedManifestReference } from '../utils/feedStorage'
+import { getReserveData, type ProjectData, type ReserveTier, RESERVE_TIERS } from '../utils/projectStorage'
 
 type Deposit = {
   sDAIAmount: bigint
@@ -26,6 +28,8 @@ interface DepositCardProps {
   onTopUp: () => void
   onExportKey?: () => void
   refetchTrigger?: number
+  /** Called when deposit active status is determined (active = sDAIAmount > 0) */
+  onActiveChange?: (depositIndex: number, isActive: boolean) => void
 }
 
 import styles from './DepositCard.module.css'
@@ -38,14 +42,34 @@ export default function DepositCard({
   onTopUp,
   onExportKey,
   refetchTrigger,
+  onActiveChange,
 }: DepositCardProps) {
   const router = useRouter()
   const [uploads, setUploads] = useState<UploadRecord[]>([])
   const [isInitializing, setIsInitializing] = useState(false)
   const [feedUrl, setFeedUrl] = useState<string | null>(null)
   const [currentFeedIndex, setCurrentFeedIndex] = useState<number | null>(null)
+  const [projects, setProjects] = useState<ProjectData[]>([])
+  const [projectFeedIndices, setProjectFeedIndices] = useState<Record<string, number | null>>({})
   const feedService = useFeedService()
   const feedExists = checkHasFeed(depositIndex)
+
+  // Fetch projects for this reserve
+  useEffect(() => {
+    const reserve = getReserveData(depositIndex)
+    if (reserve) {
+      // Only update if projects actually changed (deep comparison of slugs)
+      setProjects(prev => {
+        const newSlugs = reserve.projects.map(p => p.slug).sort().join(',')
+        const prevSlugs = prev.map(p => p.slug).sort().join(',')
+        return newSlugs !== prevSlugs ? reserve.projects : prev
+      })
+    }
+  }, [depositIndex, refetchTrigger])
+
+  // Get reserve tier info
+  const reserve = getReserveData(depositIndex)
+  const tierInfo = reserve ? RESERVE_TIERS[reserve.tier as ReserveTier] : null
 
   const { data: deposit, refetch } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
@@ -79,6 +103,33 @@ export default function DepositCard({
     }
   }, [feedExists, depositIndex, feedService, refetchTrigger])
 
+  // Fetch feed indices for all projects
+  useEffect(() => {
+    if (projects.length > 0) {
+      Promise.all(
+        projects.map(async (project) => {
+          if (project.feedOwnerAddress) {
+            const index = await feedService.fetchProjectFeedIndex(project.feedOwnerAddress)
+            return { slug: project.slug, index }
+          }
+          return { slug: project.slug, index: null }
+        })
+      ).then(results => {
+        const indices = results.reduce((acc, { slug, index }) => {
+          acc[slug] = index
+          return acc
+        }, {} as Record<string, number | null>)
+
+        // Only update if indices actually changed
+        setProjectFeedIndices(prev => {
+          const changed = Object.keys(indices).some(slug => prev[slug] !== indices[slug]) ||
+                         Object.keys(prev).length !== Object.keys(indices).length
+          return changed ? indices : prev
+        })
+      })
+    }
+  }, [projects, feedService, refetchTrigger])
+
   // Refetch when trigger changes
   useEffect(() => {
     if (refetchTrigger !== undefined && refetchTrigger > 0) {
@@ -93,6 +144,14 @@ export default function DepositCard({
       setUploads(batchUploads)
     }
   }, [depositData])
+
+  // Report active status to parent
+  useEffect(() => {
+    if (depositData && onActiveChange) {
+      const isActive = depositData.sDAIAmount > 0n
+      onActiveChange(depositIndex, isActive)
+    }
+  }, [depositData, depositIndex, onActiveChange])
 
   if (!deposit || !depositData) return null
 
@@ -109,16 +168,97 @@ export default function DepositCard({
 
   return (
     <div className={`info-box ${styles.depositCard}`}>
-      {/* Header with reserve number and date */}
+      {/* Header with reserve number, tier, and date */}
       <div className={styles.header}>
-        <h4 className={styles.title}>Reserve #{depositIndex}</h4>
+        <h4 className={styles.title}>
+          Reserve #{depositIndex}
+          {tierInfo && (
+            <span className={styles.tierBadge}>{tierInfo.name}</span>
+          )}
+        </h4>
         <span className={styles.date}>
           {depositDate.toLocaleDateString()}
         </span>
       </div>
 
-      {/* Live URL - Show prominently if feed exists */}
-      {feedUrl && (
+      {/* Projects List */}
+      {projects.length > 0 ? (
+        <div className={styles.projectsList}>
+          {projects.map((project) => {
+            // Only show slug if different from display name
+            const showSlug = project.slug !== project.displayName.toLowerCase().replace(/\s+/g, '-');
+            // Extract readable URL parts
+            const urlDisplay = project.manifestUrl
+              ? project.manifestUrl.replace(/^https?:\/\//, '').replace(/\/bzz\//, '/…/')
+              : null;
+
+            // Get the live feed index from Swarm, fallback to local
+            const liveIndex = projectFeedIndices[project.slug] ?? project.currentIndex;
+
+            return (
+              <div key={project.slug} className={styles.projectItem}>
+                <div className={styles.projectHeader}>
+                  <div className={styles.projectTitle}>
+                    <span className={styles.projectName}>{project.displayName}</span>
+                    {showSlug && <span className={styles.projectSlug}>({project.slug})</span>}
+                    <span className={styles.projectVersion}>v{liveIndex}</span>
+                  </div>
+                  {project.manifestUrl && (
+                    <a
+                      href={project.manifestUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.projectLink}
+                      title={project.manifestUrl}
+                    >
+                      View Site ↗
+                    </a>
+                  )}
+                </div>
+                <div className={styles.projectActions}>
+                  {project.manifestUrl && (() => {
+                    const copyOptions: CopyOption[] = [
+                      {
+                        label: 'Live URL',
+                        value: project.manifestUrl,
+                        description: 'Full URL with gateway'
+                      }
+                    ]
+
+                    // Add feed manifest (always points to latest) - stored hash
+                    if (project.manifestReference) {
+                      copyOptions.push({
+                        label: 'Feed Manifest',
+                        value: project.manifestReference,
+                        description: 'Always latest version'
+                      })
+                    }
+
+                    // Add swarm reference (specific version snapshot) - cached, could fetch live
+                    if (project.currentVersion) {
+                      copyOptions.push({
+                        label: 'Swarm Reference',
+                        value: project.currentVersion,
+                        description: 'Specific version'
+                      })
+                    }
+
+                    return <CopyDropdownButton options={copyOptions} size="small" />
+                  })()}
+                  <button
+                    className={`view-button view-button--small ${styles.updateBtn}`}
+                    onClick={() => router.push(`/upload?reserveId=${depositIndex}&project=${project.slug}`)}
+                    title="Push new version"
+                  >
+                    Update
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : feedUrl ? (
+        /* Legacy: single feed URL for reserves without projects */
         <div className={styles.stableUrl}>
           <div className={styles.stableUrlLabel}>
             Live URL
@@ -136,14 +276,51 @@ export default function DepositCard({
           >
             {feedUrl}
           </a>
-          <CopyButton text={feedUrl} label="URL" />
+          {(() => {
+            const feedReference = getFeedManifestReference(depositIndex)
+            const currentVersion = getCurrentVersion(depositIndex)
+            const copyOptions: CopyOption[] = [
+              {
+                label: 'Live URL',
+                value: feedUrl,
+                description: 'Full URL with gateway'
+              }
+            ]
+
+            // Add feed manifest (always points to latest) - stored hash
+            if (feedReference) {
+              copyOptions.push({
+                label: 'Feed Manifest',
+                value: feedReference,
+                description: 'Always latest version'
+              })
+            }
+
+            // Add swarm reference (specific version snapshot) - cached
+            if (currentVersion) {
+              copyOptions.push({
+                label: 'Swarm Reference',
+                value: currentVersion,
+                description: 'Specific version'
+              })
+            }
+
+            return <CopyDropdownButton options={copyOptions} size="small" />
+          })()}
+        </div>
+      ) : (
+        /* No projects and no legacy feed */
+        <div className={styles.emptyProjects}>
+          <span>No projects yet</span>
         </div>
       )}
 
-      {/* Content Preview - Most Important Section */}
-      <div className={styles.content}>
-        <FileList upload={latestUpload} />
-      </div>
+      {/* Content Preview - Show for legacy uploads */}
+      {!projects.length && latestUpload && (
+        <div className={styles.content}>
+          <FileList upload={latestUpload} />
+        </div>
+      )}
 
       {/* Reserve Status - Secondary Info */}
       <div className={styles.status}>
@@ -169,29 +346,28 @@ export default function DepositCard({
 
       {/* Actions - Clear Hierarchy */}
       <div className={styles.actions}>
-        {feedExists ? (
+        {/* Primary action: Add new project to reserve */}
+        <button
+          className={`view-button view-button--primary ${styles.actionPrimary}`}
+          onClick={() => router.push(`/upload?reserveId=${depositIndex}`)}
+        >
+          {projects.length > 0 ? 'Add Project' : 'Deploy Site'}
+        </button>
+
+        {/* Legacy: Enable updates for old reserves without projects */}
+        {!projects.length && latestUpload && !feedExists && (
           <button
-            className={`view-button view-button--primary ${styles.actionPrimary}`}
-            onClick={() => router.push(`/upload?reserveId=${depositIndex}`)}
-          >
-            Update Site
-          </button>
-        ) : latestUpload ? (
-          /* Has uploads but no feed - offer to initialize tracking */
-          <button
-            className={`view-button view-button--primary ${styles.actionPrimary}`}
+            className={`view-button ${styles.actionSecondary}`}
             disabled={isInitializing}
             onClick={async () => {
               try {
                 setIsInitializing(true)
-                // Initialize feed with stamp depth from useStampInfo
                 const manifestUrl = await feedService.initializeFeed(
                   depositIndex,
                   depositData.stampId,
                   stampInfo.depth,
                   latestUpload.reference
                 )
-                // Update the feed URL in state to trigger re-render
                 setFeedUrl(manifestUrl)
               } catch (err) {
                 console.error('Failed to initialize feed:', err)
@@ -203,14 +379,8 @@ export default function DepositCard({
           >
             {isInitializing ? 'Initializing...' : 'Enable Updates'}
           </button>
-        ) : (
-          <button
-            className={`view-button view-button--primary ${styles.actionPrimary}`}
-            onClick={onUpdateStamp}
-          >
-            Update Content
-          </button>
         )}
+
         <div className={styles.actionsSecondary}>
           <button
             className="view-button view-button--tertiary"
@@ -218,7 +388,7 @@ export default function DepositCard({
           >
             Top Up
           </button>
-          {feedExists && onExportKey && (
+          {(feedExists || projects.length > 0) && onExportKey && (
             <button
               className="view-button"
               onClick={onExportKey}

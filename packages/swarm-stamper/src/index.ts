@@ -20,5 +20,12 @@ export {
   calculateBmtRootHash,
   calculateChunkAddress,
   makeSOCAddress,
+  getAddressFromPrivateKey,
   type WriteFeedUpdateOptions
 } from './feed.js';
+export {
+  normalizeProjectSlug,
+  isValidProjectSlug,
+  deriveProjectKey,
+  type ProjectKeyInfo
+} from './keys.js';

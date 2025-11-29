@@ -88,6 +88,24 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
         throw new Error('Initial balance per chunk cannot be zero');
       }
 
+      // Check contract's minimum balance requirement
+      const minimumBalance = await publicClient.readContract({
+        address: POSTAGE_STAMP_ADDRESS,
+        abi: PostageStampABI,
+        functionName: 'minimumInitialBalancePerChunk',
+      }) as bigint;
+
+      // Use the higher of calculated balance or contract minimum
+      const effectiveBalancePerChunk = initialBalancePerChunk > minimumBalance
+        ? initialBalancePerChunk
+        : minimumBalance;
+
+      console.log('[BatchCreation] Balance per chunk:', {
+        requested: initialBalancePerChunk.toString(),
+        minimum: minimumBalance.toString(),
+        effective: effectiveBalancePerChunk.toString(),
+      });
+
       // Create reserve wallet client from private key
       const reserveAccount = privateKeyToAccount(reservePrivateKey);
       const reserveWalletClient = createWalletClient({
@@ -171,7 +189,7 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
         address: POSTAGE_STAMP_ADDRESS,
         abi: PostageStampABI,
         functionName: 'createBatch',
-        args: [reserveAccount.address, initialBalancePerChunk, depth, bucketDepth, nonce, immutable],
+        args: [reserveAccount.address, effectiveBalancePerChunk, depth, bucketDepth, nonce, immutable],
         maxPriorityFeePerGas: GNOSIS_PRIORITY_FEE
       });
 

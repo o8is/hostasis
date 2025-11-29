@@ -166,7 +166,7 @@ const StorageCalculator: React.FC = () => {
                   <ul className="buffer-protections">
                     {/* <li>BZZ price increases up to 5x</li> */}
                     <li>Storage costs doubling (2x)</li>
-                    <li>Yield rates dropping by 30%</li>
+                    <li>Yield rates dropping by 50%</li>
                   </ul>
                 </div>
               </div>

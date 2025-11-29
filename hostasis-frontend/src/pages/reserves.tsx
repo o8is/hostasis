@@ -2,16 +2,14 @@ import { useState, useEffect } from 'react';
 import type { NextPage } from 'next';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useAccount, useReadContract } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import Navigation from '../components/Navigation';
 import DepositsList from '../components/DepositsList';
-import EmptyReservesState from '../components/EmptyReservesState';
 import CreateReserveModal from '../components/CreateReserveModal';
 import { useFeedService } from '../hooks/useFeedService';
 import styles from './reserves.module.css';
-import { POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS, GNOSIS_RPC_URL } from '../contracts/addresses';
-import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
+import { POSTAGE_STAMP_ADDRESS, GNOSIS_RPC_URL } from '../contracts/addresses';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
 import { createPublicClient, http } from 'viem';
 import { gnosis } from 'viem/chains';
@@ -41,19 +39,6 @@ const ReservesPage: NextPage = () => {
   // Get contentHash from query string (e.g., /reserves?contentHash=abc123...)
   const initialContentHash = typeof router.query.contentHash === 'string' ? router.query.contentHash : undefined;
 
-  // Get deposit count to determine empty state
-  const { data: depositCount, refetch: refetchDepositCount } = useReadContract({
-    address: POSTAGE_MANAGER_ADDRESS,
-    abi: PostageManagerABI,
-    functionName: 'getUserDepositCount',
-    args: address ? [address] : undefined,
-    query: {
-      enabled: !!address,
-    },
-  });
-
-  const count = depositCount ? Number(depositCount) : 0;
-
   // Auto-open modal if amount or stampId is in query string
   useEffect(() => {
     if ((initialAmount || initialStampId) && isConnected) {
@@ -62,7 +47,6 @@ const ReservesPage: NextPage = () => {
   }, [initialAmount, initialStampId, isConnected]);
 
   const handleCreateSuccess = () => {
-    refetchDepositCount();
     setRefreshKey((prev) => prev + 1);
     // Clear the query string after successful creation
     if (initialAmount || initialStampId || initialContentHash) {
@@ -72,7 +56,6 @@ const ReservesPage: NextPage = () => {
 
   // Handle reserve creation with feed initialization
   const handleCreateSuccessWithIndex = async (reserveIndex: number, stampId: string) => {
-    refetchDepositCount();
     setRefreshKey((prev) => prev + 1);
 
     // If we have a content hash, initialize the feed
@@ -138,18 +121,12 @@ const ReservesPage: NextPage = () => {
               <ConnectButton />
             </div>
           </div>
-        ) : count === 0 ? (
-          <EmptyReservesState onCreateClick={() => setShowCreateModal(true)} initialAmount={initialAmount} />
         ) : (
-          <div>
-            <div className={styles.reservesHeader}>
-              <h1>Reserves</h1>
-              <button className={styles.createReserveButton} onClick={() => setShowCreateModal(true)}>
-                + Create Reserve
-              </button>
-            </div>
-            <DepositsList key={refreshKey} />
-          </div>
+          <DepositsList
+            key={refreshKey}
+            onCreateClick={() => setShowCreateModal(true)}
+            initialAmount={initialAmount}
+          />
         )}
         
         {/* Show URL after successful feed initialization */}

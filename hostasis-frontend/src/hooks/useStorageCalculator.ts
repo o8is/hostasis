@@ -27,7 +27,7 @@ export interface BufferFactors {
 }
 
 export interface StorageCalculatorResult {
-  calculate: (storageGB: number, fileSizeBytes?: number) => StorageCalculation | null;
+  calculate: (storageGB: number, fileSizeBytes?: number, depthOverride?: number) => StorageCalculation | null;
   bufferFactors: BufferFactors;
   apy: number;
   apyPercentage: string;
@@ -62,15 +62,15 @@ export function useStorageCalculator(): StorageCalculatorResult {
     // Factor 2: Network storage cost increase (assume 2x potential increase)
     const storagePriceBuffer = 2.0;
 
-    // Factor 3: APY decline protection (assume APY could drop to 60% of current)
-    const yieldDeclineBuffer = 1 / 0.7; // ~1.67x
+    // Factor 3: APY decline protection (assume APY could drop to 50% of current)
+    const yieldDeclineBuffer = 1 / 0.5;
 
     // Combined buffer: accounts for all risks happening together
     // We use geometric mean to avoid over-buffering while staying safe
     const combinedBuffer = Math.pow(
       bzzPriceBuffer * storagePriceBuffer * yieldDeclineBuffer,
       1/3 // Take cube root to get geometric mean
-    ) * 1.2; // Add 20% safety margin on top
+    ) ; 
 
     return {
       bzzPriceBuffer,
@@ -81,7 +81,7 @@ export function useStorageCalculator(): StorageCalculatorResult {
   }, []);
 
   const calculate = useMemo(() => {
-    return (storageGB: number, fileSizeBytes?: number): StorageCalculation | null => {
+    return (storageGB: number, fileSizeBytes?: number, depthOverride?: number): StorageCalculation | null => {
       if (isNaN(storageGB) || storageGB <= 0 || !pricePerGBPerYearDAI) return null;
 
       let yearlyStorageCost = storageGB * pricePerGBPerYearDAI;
@@ -93,7 +93,8 @@ export function useStorageCalculator(): StorageCalculatorResult {
 
       if (fileSizeBytes && currentPricePerChunk && bzzPriceUSD) {
         // Calculate actual on-chain stamp cost (pays for entire batch capacity)
-        depth = calculateDepthForSize(fileSizeBytes);
+        // Use depthOverride if provided (from tier selection), otherwise calculate from file size
+        depth = depthOverride ?? calculateDepthForSize(fileSizeBytes);
         balancePerChunk = calculateBalanceForTTL(7, currentPricePerChunk);
         totalBzzNeeded = calculateTotalBZZ(balancePerChunk, depth);
 

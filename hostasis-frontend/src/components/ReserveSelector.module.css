@@ -1,0 +1,127 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.option,
+.reserveOption {
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.option:hover,
+.reserveOption:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.option.selected,
+.reserveOption.selected {
+  background: rgba(74, 158, 255, 0.08);
+  border-color: #4a9eff;
+}
+
+.option.disabled,
+.reserveOption.disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.option.disabled:hover,
+.reserveOption.disabled:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Keep selected state visible when disabled */
+.reserveOption.selected.disabled {
+  background: rgba(74, 158, 255, 0.08);
+  border-color: #4a9eff;
+  opacity: 0.85;
+}
+
+.optionHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.radio {
+  width: 18px;
+  height: 18px;
+  accent-color: #4a9eff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.optionTitle {
+  font-weight: 600;
+  color: #fff;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tierBadge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+}
+
+.tierSelectorWrapper {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.existingSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.existingLabel {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  padding-left: 0.25rem;
+}
+
+.reserveDetails {
+  margin-top: 0.75rem;
+  margin-left: 2rem;
+}
+
+.capacityBar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+
+.capacityFill {
+  height: 100%;
+  background: linear-gradient(90deg, #4a9eff, #4ade80);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.capacityText {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.projectCount {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 0.25rem;
+}

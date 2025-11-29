@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { parseEther, type Hex } from 'viem';
-import { useAccount } from 'wagmi';
+import { useAccount, useReadContract } from 'wagmi';
 import { useTokenConversion } from '../hooks/useTokenConversion';
 import { useDepositWithPermit } from '../hooks/usePostageManager';
 import { useUserDepositCount } from '../hooks/useDeposits';
+import { useStorageCalculator } from '../hooks/useStorageCalculator';
+import { EFFECTIVE_CAPACITY_BYTES } from '../hooks/useCreatePostageBatch';
+import { POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
+import PostageStampABI from '../contracts/abis/PostageStamp.json';
 import TokenAmount from './TokenAmount';
 import TokenSelector from './TokenSelector';
 import { getMaxAmountInfo } from '../utils/maxAmount';
@@ -37,9 +41,39 @@ export default function DepositForm({
   const { address } = useAccount();
   const conversion = useTokenConversion();
   const { depositWithPermit, isPending: isDepositing, isSigning, isConfirming, isSuccess: isDeposited, hash: depositHash } = useDepositWithPermit();
-  
+  const { calculate } = useStorageCalculator();
+
   // Track deposit count to determine new reserve index
   const { data: depositCount, refetch: refetchDepositCount } = useUserDepositCount(address);
+
+  // Fetch batch depth from chain when stampId is provided
+  const normalizedInitialStampId = initialStampId ? ensureBatchIdPrefix(initialStampId) : undefined;
+  const { data: batchDepth } = useReadContract({
+    address: POSTAGE_STAMP_ADDRESS as `0x${string}`,
+    abi: PostageStampABI,
+    functionName: 'batchDepth',
+    args: normalizedInitialStampId ? [normalizedInitialStampId] : undefined,
+    query: {
+      enabled: !!normalizedInitialStampId && normalizedInitialStampId.match(/^0x[a-fA-F0-9]{64}$/) !== null,
+    },
+  });
+
+  // Calculate recommended amount from batch depth (when no initialAmount provided)
+  const calculatedRecommendedDAI = useMemo(() => {
+    if (initialAmount) return null; // Use provided amount instead
+    if (!batchDepth) return null;
+
+    const depth = Number(batchDepth);
+    if (depth < 17 || depth > 24) return null;
+
+    // Get storage capacity for this depth in GB
+    const capacityBytes = EFFECTIVE_CAPACITY_BYTES[depth] || (Math.pow(2, depth) * 4096);
+    const capacityGB = capacityBytes / (1024 * 1024 * 1024);
+
+    // Calculate recommended reserve using the storage calculator
+    const result = calculate(capacityGB, capacityBytes, depth);
+    return result?.recommendedReserve ?? null;
+  }, [batchDepth, initialAmount, calculate]);
 
   const [depositStep, setDepositStep] = useState('');
 
@@ -50,12 +84,26 @@ export default function DepositForm({
     }
   }, [conversion.error]);
 
-  // Sync initial amount from props (e.g., from query string)
+  // Calculate and set recommended amount
+  // Priority: initialAmount (from URL) > calculatedRecommendedDAI (from batch depth)
+  // All amounts are in DAI and converted to user's selected token
   useEffect(() => {
-    if (initialAmount) {
-      setAmount(initialAmount);
+    // Determine the DAI amount to use
+    const daiAmount = initialAmount
+      ? parseFloat(initialAmount)
+      : calculatedRecommendedDAI;
+
+    if (daiAmount && conversion.currentToken && conversion.exchangeRate) {
+      const daiAmountBigInt = parseEther(daiAmount.toString());
+      const tokenAmount = conversion.daiToTokenAmount(daiAmountBigInt, conversion.currentToken);
+      // Format to 2 decimal places for display
+      const tokenAmountFloat = Number(tokenAmount) / 1e18;
+      setAmount(tokenAmountFloat.toFixed(2));
+    } else if (daiAmount && !conversion.currentToken) {
+      // Token not yet detected, use DAI amount as fallback
+      setAmount(daiAmount.toFixed(2));
     }
-  }, [initialAmount]);
+  }, [initialAmount, calculatedRecommendedDAI, conversion.currentToken, conversion.exchangeRate]);
 
   // Sync initial stamp ID from props (e.g., from upload page)
   useEffect(() => {

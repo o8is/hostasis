@@ -4,12 +4,13 @@ import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAccount, useWalletClient, usePublicClient, useReadContract } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { formatEther, parseEther, erc20Abi } from 'viem';
 import Navigation from '../components/Navigation';
-import { BZZ_ADDRESS, POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
+import FileDropZone from '../components/FileDropZone';
+import ReserveSelector, { type ReserveSelection } from '../components/ReserveSelector';
+import ReserveCard from '../components/ReserveCard';
+import { POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
-import FileDropZone from '../components/FileDropZone';
 import { useStorageCalculator } from '../hooks/useStorageCalculator';
 import { usePasskeyWallet } from '../hooks/usePasskeyWallet';
 import { useReserveWalletBatchCreation } from '../hooks/useReserveWalletBatchCreation';
@@ -17,56 +18,114 @@ import { useStampedUpload } from '../hooks/useStampedUpload';
 import { useFeedService } from '../hooks/useFeedService';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
-import { getPlanTierName } from '../utils/storagePlan';
 import { deriveReserveKey } from '../utils/reserveKeys';
+import {
+  normalizeProjectSlug,
+  isValidProjectSlug,
+  getRecommendedTier,
+  getAllReserves,
+  getReserveData,
+  createReserve,
+  deleteReserve,
+  addProject,
+  updateProject,
+  RESERVE_TIERS,
+  type ReserveTier,
+  type ReserveData,
+} from '../utils/projectStorage';
+import { deriveProjectKey } from '@hostasis/swarm-stamper';
 import styles from './upload.module.css';
 
-type UploadStep = 'drop' | 'review' | 'passkey' | 'create-batch' | 'upload' | 'complete';
+type UploadStep = 'drop' | 'config' | 'deploying' | 'complete';
 
 interface UploadState {
   files: File[];
   totalSize: number;
   step: UploadStep;
+  // Config
+  projectName: string;
+  projectSlug: string;
+  reserveSelection: ReserveSelection;
+  isSPA: boolean;
+  // Results
   batchId?: string;
   swarmUrl?: string;
-  swarmReference?: string; // Raw Swarm hash for feed updates
-  isSPA?: boolean; // Single Page App mode
-  reserveIndex?: number; // Track reserve index for retry functionality
+  swarmReference?: string;
+  manifestUrl?: string;
+  reserveIndex?: number;
 }
 
 const Upload: NextPage = () => {
   const router = useRouter();
   const { isConnected, address } = useAccount();
+
+  // Load existing reserves
+  const [reserves, setReserves] = useState<ReserveData[]>([]);
+  useEffect(() => {
+    setReserves(getAllReserves());
+  }, []);
+
+  // For updating existing projects (via query param)
+  const existingReserveId = typeof router.query.reserveId === 'string' ? parseInt(router.query.reserveId) : undefined;
+  const existingProjectSlug = typeof router.query.project === 'string' ? router.query.project : undefined;
+
+  // Get existing project data if updating
+  const existingReserve = existingReserveId !== undefined ? getReserveData(existingReserveId) : undefined;
+  const existingProject = existingReserve && existingProjectSlug
+    ? existingReserve.projects.find(p => p.slug === existingProjectSlug)
+    : undefined;
+  const isUpdateMode = !!existingProject;
+
+  // Initialize state - pre-fill if updating existing project
   const [state, setState] = useState<UploadState>({
     files: [],
     totalSize: 0,
     step: 'drop',
-    isSPA: false
+    projectName: '',
+    projectSlug: '',
+    reserveSelection: { type: 'new', tier: 'standard' },
+    isSPA: false,
   });
 
+  // Update state when we have existing project info
+  useEffect(() => {
+    if (isUpdateMode && existingProject && existingReserveId !== undefined) {
+      // Only update if values have changed
+      setState(prev => {
+        const needsUpdate =
+          prev.projectName !== existingProject.displayName ||
+          prev.projectSlug !== existingProject.slug ||
+          prev.reserveSelection.type !== 'existing' ||
+          (prev.reserveSelection.type === 'existing' && prev.reserveSelection.reserveIndex !== existingReserveId);
+
+        if (!needsUpdate) return prev;
+
+        return {
+          ...prev,
+          projectName: existingProject.displayName,
+          projectSlug: existingProject.slug,
+          reserveSelection: { type: 'existing', reserveIndex: existingReserveId },
+        };
+      });
+    }
+  }, [isUpdateMode, existingProject?.displayName, existingProject?.slug, existingReserveId]);
+
   const [currentAction, setCurrentAction] = useState('');
-  
-  // For updating existing reserves
-  const reserveId = typeof router.query.reserveId === 'string' ? parseInt(router.query.reserveId) : undefined;
-  const feedService = useFeedService();
-  const [stableUrl, setStableUrl] = useState<string | null>(null);
-  const [isDeployingToFeed, setIsDeployingToFeed] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
 
   // Fetch existing reserve info if updating
   const { data: existingDeposit } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
     abi: PostageManagerABI,
     functionName: 'getUserDeposit',
-    args: address && reserveId !== undefined ? [address, BigInt(reserveId)] : undefined,
+    args: address && existingReserveId !== undefined ? [address, BigInt(existingReserveId)] : undefined,
     query: {
-      enabled: !!address && reserveId !== undefined,
+      enabled: !!address && existingReserveId !== undefined,
     },
   });
 
-  // Extract stamp ID from existing deposit
   const existingStampId = existingDeposit ? (existingDeposit as any).stampId : undefined;
 
-  // Fetch stamp depth for existing reserve
   const { data: existingStampDepth } = useReadContract({
     address: POSTAGE_STAMP_ADDRESS,
     abi: PostageStampABI,
@@ -77,12 +136,8 @@ const Upload: NextPage = () => {
     },
   });
 
-  // Debug mode: allow reusing existing stamp via ?debugBatchId=xxx&debugDepth=20
-  const debugBatchId = typeof router.query.debugBatchId === 'string' ? router.query.debugBatchId : undefined;
-  const debugDepth = typeof router.query.debugDepth === 'string' ? parseInt(router.query.debugDepth) : 20;
-  const isDebugMode = !!debugBatchId;
-
-  const { calculate, bzzPriceUSD } = useStorageCalculator();
+  const { calculate } = useStorageCalculator();
+  const feedService = useFeedService();
 
   // Passkey wallet hooks
   const {
@@ -91,18 +146,10 @@ const Upload: NextPage = () => {
     walletInfo: passkeyWallet,
     createPasskeyWallet,
     authenticatePasskeyWallet,
-    error: passkeyError
   } = usePasskeyWallet();
 
   const { createBatchWithReserveWallet, isCreating: isBatchCreating, currentStep } = useReserveWalletBatchCreation();
   const { uploadWithStamper, progress: uploadProgress, error: uploadError, reset: resetUpload } = useStampedUpload();
-
-  // Monitor reserve wallet batch creation substeps
-  useEffect(() => {
-    if (isBatchCreating && currentStep) {
-      setCurrentAction(currentStep);
-    }
-  }, [currentStep, isBatchCreating]);
 
   // Get user's deposit count to derive next reserve index
   const { data: depositCount } = useReadContract({
@@ -115,35 +162,83 @@ const Upload: NextPage = () => {
     },
   });
 
-  // Viem clients for gas transfer
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
 
-  // Convert bytes to GB
-  const storageSizeGB = useMemo(() => {
-    return state.totalSize / (1024 * 1024 * 1024);
+  // Calculate recommended tier based on file size
+  const recommendedTier = useMemo(() => {
+    if (state.totalSize <= 0) return 'standard';
+    return getRecommendedTier(state.totalSize);
   }, [state.totalSize]);
 
-  // Calculate costs based on file size - this gives us everything we need!
+  // Update recommended tier when files change
+  useEffect(() => {
+    if (state.step === 'config' && state.reserveSelection.type === 'new') {
+      setState(prev => ({
+        ...prev,
+        reserveSelection: { type: 'new', tier: recommendedTier },
+      }));
+    }
+  }, [recommendedTier]);
+
+  // Calculate costs based on selected tier
+  const storageSizeGB = state.totalSize / (1024 * 1024 * 1024);
+  const selectedTierDepth = state.reserveSelection.type === 'new'
+    ? RESERVE_TIERS[state.reserveSelection.tier].depth
+    : undefined;
   const calculations = useMemo(() => {
     if (storageSizeGB <= 0) return null;
-    return calculate(storageSizeGB, state.totalSize);
-  }, [storageSizeGB, state.totalSize, calculate]);
+    return calculate(storageSizeGB, state.totalSize, selectedTierDepth);
+  }, [storageSizeGB, state.totalSize, calculate, selectedTierDepth]);
+
+  // Validate project name
+  const projectNameError = useMemo(() => {
+    if (!state.projectName) return null;
+    const slug = normalizeProjectSlug(state.projectName);
+    if (!slug) return 'Please enter a valid project name';
+    if (!isValidProjectSlug(slug)) return 'Project name must contain at least one letter or number';
+
+    // Check for duplicate in selected reserve (skip check if updating existing project)
+    if (state.reserveSelection.type === 'existing' && !isUpdateMode) {
+      const reserve = getReserveData(state.reserveSelection.reserveIndex);
+      if (reserve?.projects.some(p => p.slug === slug)) {
+        return 'A project with this name already exists in this reserve';
+      }
+    }
+    return null;
+  }, [state.projectName, state.reserveSelection, isUpdateMode]);
+
+  const canDeploy = state.projectName.length > 0 && !projectNameError && isConnected;
 
   const handleFilesDropped = (files: File[], totalSize: number) => {
-    setState({
+    setState(prev => ({
+      ...prev,
       files,
       totalSize,
-      step: 'review'
-    });
+      step: 'config',
+      // Don't reset reserve selection if in update mode
+      reserveSelection: isUpdateMode
+        ? prev.reserveSelection
+        : { type: 'new', tier: getRecommendedTier(totalSize) },
+    }));
   };
 
-  const handleStartDeployment = async () => {
-    if (!isConnected || !address) return;
+  const handleProjectNameChange = (name: string) => {
+    setState(prev => ({
+      ...prev,
+      projectName: name,
+      projectSlug: normalizeProjectSlug(name),
+    }));
+  };
+
+  const handleDeploy = async () => {
+    if (!isConnected || !address || !canDeploy) return;
+
+    setDeployError(null);
+    setState(prev => ({ ...prev, step: 'deploying' }));
 
     try {
-      // Step 1: Authenticate with passkey (or create if first time)
-      setState(prev => ({ ...prev, step: 'passkey' }));
+      // Step 1: Authenticate with passkey
       setCurrentAction('Authenticating with passkey...');
 
       let passkeyInfo = passkeyWallet;
@@ -160,175 +255,126 @@ const Upload: NextPage = () => {
         throw new Error('Failed to authenticate passkey wallet');
       }
 
-      console.log('Passkey wallet ready:', passkeyInfo.address);
+      let reserveIndex: number;
+      let stampId: string;
+      let depth: number;
+      let reserveKey: { privateKey: string; address: string };
 
-      // UPDATE MODE: If updating existing reserve, use existing stamp
-      if (reserveId !== undefined && existingStampId && existingStampDepth) {
-        console.log('📝 UPDATE MODE: Using existing stamp from reserve', { reserveId, existingStampId, existingStampDepth });
-        setState(prev => ({ ...prev, step: 'upload', batchId: existingStampId }));
-        setCurrentAction('Uploading with reserve key...');
+      if (state.reserveSelection.type === 'new') {
+        // Creating new reserve
+        reserveIndex = depositCount ? Number(depositCount) : 0;
+        const tier = state.reserveSelection.tier;
+        depth = RESERVE_TIERS[tier].depth;
 
-        // Derive reserve key for this specific reserve
-        const reserveKey = deriveReserveKey(passkeyInfo.privateKey, reserveId);
-        console.log('Using reserve key:', reserveKey.address);
+        // Calculate costs using selected tier's depth
+        const tierCalc = calculate(storageSizeGB, state.totalSize, depth);
+        if (!tierCalc) throw new Error('Failed to calculate costs');
 
-        const normalizedStampId = existingStampId.replace(/^0x/, '');
-        const result = await uploadWithStamper(
-          state.files,
-          normalizedStampId,
-          reserveKey.privateKey, // Use reserve key instead of passkey
-          Number(existingStampDepth),
-          undefined, // gatewayUrl - use default
-          { isSPA: state.isSPA }
-        );
+        const balancePerChunk = tierCalc.balancePerChunk;
 
-        // Save upload record for history tracking
-        const isWebsite = state.files.some(f =>
-          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
-        );
-        const indexDocument = state.files.find(f =>
-          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
-        )?.name;
-        const filename = state.files.length === 1 ? state.files[0].name : undefined;
+        reserveKey = deriveReserveKey(passkeyInfo.privateKey, reserveIndex);
 
-        saveUpload({
-          batchId: existingStampId,
-          reference: result.reference,
-          files: state.files.map(f => ({
-            name: f.name,
-            size: f.size,
-            type: f.type
-          })),
-          totalSize: state.totalSize,
-          metadata: {
-            isWebsite,
-            indexDocument,
-            filename,
-            isSPA: state.isSPA
-          }
+        // Calculate total xDAI needed
+        const totalXDAI = (tierCalc.initialStampCost + 0.01).toFixed(6);
+
+        setCurrentAction('Creating postage stamp...');
+
+        const { batchId } = await createBatchWithReserveWallet({
+          reservePrivateKey: reserveKey.privateKey as `0x${string}`,
+          totalXDAI,
+          initialBalancePerChunk: balancePerChunk || BigInt(0),
+          depth,
+          immutable: false,
         });
 
-        setState(prev => ({
-          ...prev,
-          step: 'complete',
-          swarmUrl: result.url,
-          swarmReference: result.reference
-        }));
+        stampId = batchId;
 
-        return;
+        // Create reserve in local storage
+        createReserve(reserveIndex, tier);
+
+      } else {
+        // Using existing reserve
+        reserveIndex = state.reserveSelection.reserveIndex;
+        const reserve = getReserveData(reserveIndex);
+        if (!reserve) throw new Error('Reserve not found');
+
+        // Get stamp from contract
+        const deposit = await publicClient?.readContract({
+          address: POSTAGE_MANAGER_ADDRESS,
+          abi: PostageManagerABI,
+          functionName: 'getUserDeposit',
+          args: [address, BigInt(reserveIndex)],
+        }) as any;
+
+        if (!deposit?.stampId) throw new Error('No stamp found for reserve');
+
+        stampId = deposit.stampId;
+        depth = reserve.depth;
+        reserveKey = deriveReserveKey(passkeyInfo.privateKey, reserveIndex);
       }
 
-      // DEBUG MODE: Skip swap and stamp creation, go straight to upload with existing stamp
-      if (isDebugMode && debugBatchId) {
-        console.log('🐛 DEBUG MODE: Skipping swap/stamp, using existing stamp', { debugBatchId, debugDepth });
-        setState(prev => ({ ...prev, step: 'upload', batchId: debugBatchId }));
-        setCurrentAction('Uploading with debug stamp...');
+      // Step 2: Upload files
+      setCurrentAction('Uploading files...');
+      setState(prev => ({ ...prev, batchId: stampId, reserveIndex }));
 
-        const result = await uploadWithStamper(
-          state.files,
-          debugBatchId,
-          passkeyInfo.privateKey,
-          debugDepth,
-          undefined, // gatewayUrl - use default
-          { isSPA: state.isSPA }
-        );
-
-        setState(prev => ({
-          ...prev,
-          step: 'complete',
-          swarmUrl: result.url
-        }));
-
-        // Detect if this is a website upload
-        const isWebsite = state.files.some(f =>
-          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
-        );
-        const indexDocument = state.files.find(f =>
-          f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
-        )?.name;
-        const filename = state.files.length === 1 ? state.files[0].name : undefined;
-
-        saveUpload({
-          batchId: debugBatchId,
-          reference: result.reference,
-          files: state.files.map(f => ({
-            name: f.name,
-            size: f.size,
-            type: f.type
-          })),
-          totalSize: state.totalSize,
-          metadata: {
-            isWebsite,
-            indexDocument,
-            filename,
-            isSPA: state.isSPA
-          }
-        });
-
-        return;
-      }
-
-      if (!publicClient) {
-        throw new Error('Public client not available');
-      }
-
-      if (!calculations || !calculations.bzzAmount) {
-        throw new Error('Calculation data not available. Please try again.');
-      }
-
-      // Step 2: Create batch with reserve wallet
-      setState(prev => ({ ...prev, step: 'create-batch' }));
-
-      if (!calculations.depth || !calculations.balancePerChunk) {
-        throw new Error('Batch parameters not calculated. Please try again.');
-      }
-
-      if (!walletClient) {
-        throw new Error('Wallet client not available');
-      }
-
-      // Calculate next reserve index
-      const nextReserveIndex = depositCount ? Number(depositCount) : 0;
-      console.log('Creating batch for reserve index:', nextReserveIndex);
-
-      // Derive reserve key for this reserve
-      const reserveKey = deriveReserveKey(passkeyInfo.privateKey, nextReserveIndex);
-      console.log('Reserve key address:', reserveKey.address);
-
-      // Calculate total xDAI needed (stamp cost + gas buffer)
-      const totalXDAI = (calculations.initialStampCost + 0.01).toFixed(6); // Add 0.01 xDAI for gas
-
-      setCurrentAction('Creating postage stamp with reserve wallet...');
-
-      const { hash: createHash, batchId } = await createBatchWithReserveWallet({
-        reservePrivateKey: reserveKey.privateKey,
-        totalXDAI,
-        initialBalancePerChunk: calculations.balancePerChunk,
-        depth: calculations.depth,
-        immutable: false // Allow mutable content for feeds
-      });
-
-      console.log('Batch created:', { batchId, hash: createHash });
-      setState(prev => ({ ...prev, batchId, reserveIndex: nextReserveIndex }));
-
-      // Step 3: Upload to Swarm with client-side stamping
-      setState(prev => ({ ...prev, step: 'upload' }));
-      setCurrentAction('Uploading with client-side stamping...');
-
-      // Remove 0x prefix for batch ID
-      const normalizedBatchId = batchId.replace(/^0x/, '');
+      const normalizedStampId = stampId.replace(/^0x/, '');
       const uploadResult = await uploadWithStamper(
         state.files,
-        normalizedBatchId,
-        reserveKey.privateKey, // Use reserve key instead of passkey
-        calculations.depth,
-        undefined, // gatewayUrl - use default
+        normalizedStampId,
+        reserveKey.privateKey as `0x${string}`,
+        depth,
+        undefined,
         { isSPA: state.isSPA }
       );
 
-      console.log('Upload complete:', { reference: uploadResult.reference, url: uploadResult.url, cid: uploadResult.cid });
+      // Step 3: Create or update project feed
+      let manifestUrl: string;
 
-      // Save upload record for history tracking
+      if (isUpdateMode) {
+        // Update existing project
+        setCurrentAction('Updating project feed...');
+
+        await feedService.deployToProject(
+          reserveIndex,
+          state.projectSlug,
+          stampId,
+          depth,
+          uploadResult.reference
+        );
+
+        // Get the existing manifest URL
+        manifestUrl = existingProject!.manifestUrl;
+      } else {
+        // Create new project
+        setCurrentAction('Creating project feed...');
+
+        const projectKey = deriveProjectKey(reserveKey.privateKey, state.projectSlug);
+
+        // Add project to reserve first (manifestUrl will be updated by initializeProjectFeed)
+        const now = Date.now();
+        const projectData = {
+          slug: state.projectSlug,
+          displayName: state.projectName,
+          feedOwnerAddress: projectKey.address,
+          manifestUrl: '', // Will be set by initializeProjectFeed
+          currentVersion: uploadResult.reference,
+          currentIndex: 0,
+          createdAt: now,
+          updatedAt: now,
+        };
+        addProject(reserveIndex, projectData);
+
+        // Initialize the feed - this creates the SOC, manifest, and updates the project's manifestUrl
+        manifestUrl = await feedService.initializeProjectFeed(
+          reserveIndex,
+          state.projectSlug,
+          stampId,
+          depth,
+          uploadResult.reference
+        );
+      }
+
+      // Save upload record
       const isWebsite = state.files.some(f =>
         f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
       );
@@ -336,39 +382,53 @@ const Upload: NextPage = () => {
         f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
       )?.name;
 
-      // For single file uploads, save the filename for proper URL construction
-      const isSingleFile = state.files.length === 1;
-      const filename = isSingleFile ? state.files[0].name : undefined;
-
       saveUpload({
-        batchId,
+        batchId: stampId,
         reference: uploadResult.reference,
         files: state.files.map(f => ({
           name: f.name,
           size: f.size,
-          type: f.type
+          type: f.type,
         })),
         totalSize: state.totalSize,
         metadata: {
           isWebsite,
           indexDocument,
-          filename,
-          isSPA: state.isSPA
-        }
+          isSPA: state.isSPA,
+        },
       });
 
       setState(prev => ({
         ...prev,
         step: 'complete',
-        swarmUrl: uploadResult.url,
-        swarmReference: uploadResult.reference
+        swarmUrl: manifestUrl, // Use the feed URL (stable, updatable) instead of static upload URL
+        swarmReference: uploadResult.reference,
+        reserveIndex,
       }));
 
-      // Don't auto-redirect - let user test the content first
-      // They can manually navigate to reserves page if needed
+      // Refresh reserves list
+      setReserves(getAllReserves());
+
     } catch (err) {
       console.error('Deployment failed:', err);
-      setCurrentAction('');
+      const errorMessage = err instanceof Error ? err.message : 'Deployment failed';
+
+      // Check if this is a stale reserve error (reserve exists in localStorage but not on-chain)
+      if (errorMessage.includes('InvalidDepositIndex') && state.reserveSelection.type === 'existing') {
+        const staleIndex = state.reserveSelection.reserveIndex;
+        console.log(`Cleaning up stale reserve #${staleIndex}`);
+        deleteReserve(staleIndex);
+        setReserves(getAllReserves());
+        setDeployError(`Reserve #${staleIndex} no longer exists on-chain and has been removed. Please select a different option.`);
+        setState(prev => ({
+          ...prev,
+          step: 'config',
+          reserveSelection: { type: 'new', tier: recommendedTier },
+        }));
+      } else {
+        setDeployError(errorMessage);
+        setState(prev => ({ ...prev, step: 'config' }));
+      }
     }
   };
 
@@ -377,85 +437,14 @@ const Upload: NextPage = () => {
       files: [],
       totalSize: 0,
       step: 'drop',
-      isSPA: false
+      projectName: '',
+      projectSlug: '',
+      reserveSelection: { type: 'new', tier: 'standard' },
+      isSPA: false,
     });
     resetUpload();
     setCurrentAction('');
-    setStableUrl(null);
-  };
-
-  const handleRetryUpload = async () => {
-    if (!state.batchId || state.files.length === 0 || !passkeyWallet || !calculations?.depth) return;
-
-    try {
-      resetUpload();
-      setCurrentAction('Retrying upload to Swarm...');
-
-      const normalizedBatchId = state.batchId.replace(/^0x/, '');
-
-      // Re-derive reserve key if we have reserve index
-      let uploadPrivateKey = passkeyWallet.privateKey;
-
-      if (state.reserveIndex !== undefined) {
-        const reserveKey = deriveReserveKey(passkeyWallet.privateKey, state.reserveIndex);
-        uploadPrivateKey = reserveKey.privateKey;
-        console.log('Retry: Using reserve key for reserve index:', state.reserveIndex);
-      } else {
-        console.warn('Retry: No reserve index found, using passkey wallet (may fail for new uploads)');
-      }
-
-      const uploadResult = await uploadWithStamper(
-        state.files,
-        normalizedBatchId,
-        uploadPrivateKey, // Use correct key
-        calculations.depth,
-        undefined, // gatewayUrl - use default
-        { isSPA: state.isSPA }
-      );
-
-      console.log('Retry upload complete:', { reference: uploadResult.reference, url: uploadResult.url, cid: uploadResult.cid });
-
-      // Save upload record for history tracking
-      const isWebsite = state.files.some(f =>
-        f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
-      );
-      const indexDocument = state.files.find(f =>
-        f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
-      )?.name;
-
-      // For single file uploads, save the filename for proper URL construction
-      const isSingleFile = state.files.length === 1;
-      const filename = isSingleFile ? state.files[0].name : undefined;
-
-      saveUpload({
-        batchId: state.batchId,
-        reference: uploadResult.reference,
-        files: state.files.map(f => ({
-          name: f.name,
-          size: f.size,
-          type: f.type
-        })),
-        totalSize: state.totalSize,
-        metadata: {
-          isWebsite,
-          indexDocument,
-          filename,
-          isSPA: state.isSPA
-        }
-      });
-
-      setState(prev => ({
-        ...prev,
-        step: 'complete',
-        swarmUrl: uploadResult.url,
-        swarmReference: uploadResult.reference
-      }));
-
-      // Don't auto-redirect - let user test the content first
-    } catch (err) {
-      console.error('Retry upload failed:', err);
-      setCurrentAction('');
-    }
+    setDeployError(null);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -466,54 +455,48 @@ const Upload: NextPage = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  // Smart number formatting - increases precision for smaller values
   const formatSmartNumber = (value: number, minDecimals: number = 2): string => {
     if (value === 0) return '0';
     if (value >= 1) return value.toFixed(minDecimals);
     if (value >= 0.01) return value.toFixed(4);
     if (value >= 0.0001) return value.toFixed(6);
-    if (value >= 0.000001) return value.toFixed(8);
     return value.toExponential(2);
   };
 
   const isProcessing = isAuthenticating || isBatchCreating ||
     uploadProgress.phase === 'chunking' || uploadProgress.phase === 'stamping' || uploadProgress.phase === 'uploading';
 
+  // Get tier info for display
+  const selectedTierInfo = state.reserveSelection.type === 'new'
+    ? RESERVE_TIERS[state.reserveSelection.tier]
+    : null;
+
   return (
     <>
       <Head>
         <title>Upload | Hostasis</title>
-        <meta
-          content="Drop your files and deploy to permanent Swarm storage."
-          name="description"
-        />
+        <meta content="Drop your files and deploy to permanent Swarm storage." name="description" />
       </Head>
 
       <Navigation />
 
       <div className={styles.page}>
-        {isDebugMode && (
-          <div className={styles.debugBanner}>
-            🐛 DEBUG MODE: Using existing stamp {debugBatchId?.substring(0, 10)}... (depth {debugDepth})
-          </div>
-        )}
-        
         <div className={styles.hero}>
           <h1 className={styles.headline}>
-            {reserveId !== undefined ? 'Update your site' : "Drag & drop. It's permanent."}
+            {isUpdateMode ? `Update ${existingProject?.displayName}` : "Drag & drop. It's online."}
           </h1>
           <p className={styles.subheadline}>
-            {reserveId !== undefined ? (
+            {isUpdateMode ? (
               <>
-                Upload a new version for Reserve #{reserveId}.
+                Drop your updated files to push a new version.
                 <br />
-                No additional costs-just drop your updated files.
+                Your live URL will update automatically.
               </>
             ) : (
               <>
                 Drop a folder with your project&apos;s HTML, CSS, and JS files.
                 <br />
-                We&apos;ll give you permanent decentralized hosting.
+                We&apos;ll give you a link to share it.
               </>
             )}
           </p>
@@ -524,118 +507,99 @@ const Upload: NextPage = () => {
             <FileDropZone onFilesDropped={handleFilesDropped} />
           )}
 
-          {state.step === 'review' && (
+          {state.step === 'config' && (
             <div className={styles.review}>
-              {reserveId !== undefined ? (
-                /* UPDATE MODE - Show simplified review without costs */
-                <>
-                  <div className={styles.reviewHeader}>
-                    <h2>Update Reserve #{reserveId}</h2>
-                    <p>Upload new version to your existing reserve</p>
+              <div className={styles.reviewHeader}>
+                <h2>Almost there!</h2>
+                <p>{state.files.length} files · {formatFileSize(state.totalSize)}</p>
+              </div>
+
+              {/* Project Name Input */}
+              <div className={styles.configSection}>
+                <label className={styles.configLabel}>Project name</label>
+                <input
+                  type="text"
+                  value={state.projectName}
+                  onChange={(e) => handleProjectNameChange(e.target.value)}
+                  placeholder="my-portfolio"
+                  className={styles.configInput}
+                  autoFocus
+                  disabled={isUpdateMode}
+                  readOnly={isUpdateMode}
+                />
+                {state.projectSlug && !projectNameError && (
+                  <div className={styles.slugPreview}>
+                    Slug: <code>{state.projectSlug}</code>
                   </div>
+                )}
+                {projectNameError && (
+                  <div className={styles.inputError}>{projectNameError}</div>
+                )}
+              </div>
 
-                  <div className={styles.reviewSummary}>
-                    <div className={styles.reviewStat}>
-                      <span className={styles.statLabel}>Files</span>
-                      <span className={styles.statValue}>{state.files.length}</span>
-                    </div>
-                    <div className={styles.reviewStat}>
-                      <span className={styles.statLabel}>Total Size</span>
-                      <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
-                    </div>
-                    <div className={styles.reviewStat}>
-                      <span className={styles.statLabel}>Mode</span>
-                      <span className={styles.statValue}>Update</span>
-                    </div>
+              {/* Reserve Selection */}
+              <div className={styles.configSection}>
+                <label className={styles.configLabel}>
+                  {isUpdateMode ? 'Updating in reserve' : 'Where should this project live?'}
+                </label>
+                {isUpdateMode && existingReserve && existingReserveId !== undefined ? (
+                  <ReserveCard
+                    reserveIndex={existingReserveId}
+                    tier={existingReserve.tier}
+                    createdAt={existingDeposit ? Number((existingDeposit as any).depositTime) * 1000 : undefined}
+                    batchId={existingStampId || ''}
+                  />
+                ) : (
+                  <ReserveSelector
+                    reserves={reserves}
+                    selection={state.reserveSelection}
+                    onSelectionChange={(selection) => setState(prev => ({ ...prev, reserveSelection: selection }))}
+                    recommendedTier={recommendedTier}
+                    disabled={isProcessing}
+                  />
+                )}
+              </div>
+
+              {/* Cost Summary (only for new reserves) */}
+              {state.reserveSelection.type === 'new' && calculations && (
+                <div className={styles.reviewCosts}>
+                  <h3>Cost Estimate</h3>
+                  <div className={styles.costLine}>
+                    <span>Postage stamp ({selectedTierInfo?.name})</span>
+                    <span>~{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
                   </div>
-
-                  <div className={styles.reviewCosts}>
-                    <h3>Using Existing Stamp</h3>
-                    <div className={styles.costNote} style={{ marginTop: '0.5rem' }}>
-                      No additional costs! {"You're"} using the existing postage stamp from Reserve #{reserveId}.
-                      Just upload your new files and deploy the update.
-                    </div>
+                  <div className={styles.costLine}>
+                    <span>Reserve funding (optional)</span>
+                    <span>~{formatSmartNumber(calculations.recommendedReserve)} DAI</span>
                   </div>
-                </>
-              ) : calculations ? (
-                /* NEW UPLOAD MODE - Show full cost breakdown */
-                <>
-                  <div className={styles.reviewHeader}>
-                    <h2>Ready to Deploy</h2>
-                    <p>Review your upload and costs</p>
+                  <div className={styles.costNote}>
+                    Stamp gets you online for ~7 days. Fund a reserve to stay online permanently via yield.
                   </div>
+                </div>
+              )}
 
-                  <div className={styles.reviewSummary}>
-                    <div className={styles.reviewStat}>
-                      <span className={styles.statLabel}>Files</span>
-                      <span className={styles.statValue}>{state.files.length}</span>
-                    </div>
-                    <div className={styles.reviewStat}>
-                      <span className={styles.statLabel}>Total Size</span>
-                      <span className={styles.statValue}>{formatFileSize(state.totalSize)}</span>
-                    </div>
-                    <div className={styles.reviewStat}>
-                      <span className={styles.statLabel}>Storage</span>
-                      <span className={styles.statValue}>{formatSmartNumber(storageSizeGB)} GB</span>
-                    </div>
-                  </div>
-
-                  <div className={styles.reviewCosts}>
-                    <h3>Cost Breakdown</h3>
-
-                    {calculations.bzzAmount && (
-                      <div className={styles.costLine}>
-                        <span>BZZ for Stamp (7 days)</span>
-                        <span>{formatSmartNumber(parseFloat(formatBZZ(calculations.bzzAmount)))} BZZ</span>
-                      </div>
-                    )}
-
-                    <div className={styles.costLine}>
-                      <span>Est. xDAI for BZZ Swap</span>
-                      <span>{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
-                    </div>
-
-                    <div className={styles.costLine}>
-                      <span>Recommended Reserve</span>
-                      <span>{formatSmartNumber(calculations.recommendedReserve)} xDAI</span>
-                    </div>
-
-                    {calculations.depth && getPlanTierName(calculations.depth) && (
-                      <div className={styles.costLine}>
-                        <span>Storage Plan</span>
-                        <span>{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
-                      </div>
-                    )}
-
-                    <div className={`${styles.costLine} ${styles.costLineTotal}`}>
-                      <span>Total xDAI Needed</span>
-                      <span>{formatSmartNumber(calculations.totalUpfrontCost)} xDAI</span>
-                    </div>
-
-                    <div className={styles.costNote}>
-                      Your reserve generates yield to pay for permanent hosting.
-                      No monthly fees, ever.
-                    </div>
-                  </div>
-                </>
-              ) : null}
-
-              {/* SPA Option - only show if uploading a website with index.html */}
-              {state.files.some(f => 
+              {/* SPA Option */}
+              {state.files.some(f =>
                 f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
               ) && (
                 <div className={styles.spaOption}>
                   <label className={styles.spaCheckboxLabel}>
                     <input
                       type="checkbox"
-                      checked={state.isSPA || false}
+                      checked={state.isSPA}
                       onChange={(e) => setState(prev => ({ ...prev, isSPA: e.target.checked }))}
                       className={styles.spaCheckbox}
                     />
                     <span className={styles.spaCheckboxText}>
-                      Configure as a single-page app (rewrite all urls to /index.html)
+                      Single-page app (rewrite all URLs to /index.html)
                     </span>
                   </label>
+                </div>
+              )}
+
+              {deployError && (
+                <div className={styles.error}>
+                  <p>{deployError}</p>
                 </div>
               )}
 
@@ -647,79 +611,71 @@ const Upload: NextPage = () => {
               ) : (
                 <div className={styles.reviewActions}>
                   <button
-                    onClick={handleStartDeployment}
+                    onClick={handleDeploy}
                     className={styles.ctaButton}
-                    disabled={isProcessing}
+                    disabled={!canDeploy || isProcessing}
                   >
-                    {isProcessing ? 'Processing...' : reserveId !== undefined ? 'Upload Update' : 'Deploy to Swarm'}
+                    {isProcessing ? (isUpdateMode ? 'Updating...' : 'Deploying...') : (isUpdateMode ? 'Update Project' : 'Deploy to Swarm')}
                   </button>
                   <button
                     onClick={handleReset}
                     className={styles.secondaryButton}
                     disabled={isProcessing}
                   >
-                    Start Over
+                    {isUpdateMode ? 'Cancel' : 'Start Over'}
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {(state.step === 'passkey' || state.step === 'create-batch' || state.step === 'upload') && (
+          {state.step === 'deploying' && (
             <div className={styles.progress}>
               <div className={styles.progressHeader}>
-                <h2>Deploying...</h2>
+                <h2>{isUpdateMode ? `Updating ${state.projectName}...` : `Deploying ${state.projectName}...`}</h2>
                 <p>{currentAction || uploadProgress.message}</p>
               </div>
 
               <div className={styles.progressSteps}>
-                <div className={`${styles.progressStep} ${state.step === 'passkey' ? styles.progressStepActive : (state.step === 'create-batch' || state.step === 'upload') ? styles.progressStepComplete : ''}`}>
+                <div className={`${styles.progressStep} ${
+                  currentAction.includes('passkey') || currentAction.includes('Creating passkey')
+                    ? styles.progressStepActive
+                    : currentAction ? styles.progressStepComplete : ''
+                }`}>
                   <div className={styles.stepNumber}>1</div>
-                  <div className={styles.stepLabel}>Passkey Auth</div>
+                  <div className={styles.stepLabel}>Auth</div>
                 </div>
                 <div className={`${styles.progressStep} ${
-                  state.step === 'create-batch' && (
-                    currentStep?.includes('Transferring') ||
-                    currentStep?.includes('Getting swap') ||
-                    currentStep?.includes('Swapping')
-                  ) ? styles.progressStepActive : (
-                    (state.step === 'create-batch' && (
-                      currentStep?.includes('Approving') ||
-                      currentStep?.includes('Creating postage')
-                    )) || state.step === 'upload'
-                  ) ? styles.progressStepComplete : ''
+                  currentAction.includes('stamp') || currentAction.includes('Fund')
+                    ? styles.progressStepActive
+                    : currentAction.includes('Upload') || currentAction.includes('feed')
+                      ? styles.progressStepComplete : ''
                 }`}>
                   <div className={styles.stepNumber}>2</div>
-                  <div className={styles.stepLabel}>Fund Reserve</div>
+                  <div className={styles.stepLabel}>Stamp</div>
                 </div>
                 <div className={`${styles.progressStep} ${
-                  state.step === 'create-batch' && (
-                    currentStep?.includes('Approving') ||
-                    currentStep?.includes('Creating postage')
-                  ) ? styles.progressStepActive : state.step === 'upload' ? styles.progressStepComplete : ''
+                  currentAction.includes('Upload') || uploadProgress.phase !== 'idle'
+                    ? styles.progressStepActive
+                    : currentAction.includes('feed') ? styles.progressStepComplete : ''
                 }`}>
                   <div className={styles.stepNumber}>3</div>
-                  <div className={styles.stepLabel}>Create Stamp</div>
+                  <div className={styles.stepLabel}>Upload</div>
                 </div>
-                <div className={`${styles.progressStep} ${state.step === 'upload' ? styles.progressStepActive : ''}`}>
+                <div className={`${styles.progressStep} ${
+                  currentAction.includes('feed') ? styles.progressStepActive : ''
+                }`}>
                   <div className={styles.stepNumber}>4</div>
-                  <div className={styles.stepLabel}>Upload Files</div>
+                  <div className={styles.stepLabel}>Feed</div>
                 </div>
               </div>
 
               {uploadError && (
                 <div className={styles.error}>
                   <p>Error: {uploadError.message}</p>
-                  <div className={styles.errorActions}>
-                    {state.step === 'upload' && state.batchId && (
-                      <button onClick={handleRetryUpload} className={styles.ctaButton}>
-                        Retry Upload
-                      </button>
-                    )}
-                    <button onClick={handleReset} className={styles.secondaryButton}>
-                      Start Over
-                    </button>
-                  </div>
+                  <button onClick={handleReset} className={styles.secondaryButton}>
+                    Start Over
+                  </button>
                 </div>
               )}
             </div>
@@ -728,106 +684,58 @@ const Upload: NextPage = () => {
           {state.step === 'complete' && (
             <div className={styles.complete}>
               <div className={styles.completeIcon}>✓</div>
-              <h2>Uploaded Successfully!</h2>
-              <p>
-                Your files are now on the Swarm network.
-              </p>
+              <h2>{isUpdateMode ? 'Update published!' : 'Your site is live!'}</h2>
+
               {state.swarmUrl && (
                 <div className={styles.completeActions}>
-                  <a href={state.swarmUrl} target="_blank" rel="noopener noreferrer" className={styles.swarmLink}>
-                    Preview
+                  <a
+                    href={state.swarmUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.swarmLink}
+                  >
+                    {state.swarmUrl}
                   </a>
 
-                  {/* Show live URL if we deployed to an existing feed */}
-                  {stableUrl && (
-                    <div className={styles.reservePrompt} style={{ background: 'rgba(74, 222, 128, 0.1)', borderColor: '#4ade80' }}>
-                      <p className={styles.reserveMessage} style={{ color: '#4ade80' }}>
-                        <strong>✓ Deployed!</strong> Live URL:
-                      </p>
-                      <a 
-                        href={stableUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        style={{ 
-                          display: 'block',
-                          marginTop: '0.5rem',
-                          padding: '0.75rem 1rem',
-                          background: 'rgba(74, 158, 255, 0.1)',
-                          borderRadius: '8px',
-                          color: '#4a9eff',
-                          wordBreak: 'break-all',
-                          fontFamily: 'monospace',
-                          fontSize: '0.85rem',
-                          textDecoration: 'none'
-                        }}
-                      >
-                        {stableUrl}
-                      </a>
-                    </div>
-                  )}
+                  <div className={styles.actionButtons}>
+                    <a
+                      href={state.swarmUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={styles.ctaButton}
+                      style={{ textDecoration: 'none', display: 'inline-block' }}
+                    >
+                      Open Site
+                    </a>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(state.swarmUrl || '')}
+                      className={styles.secondaryButton}
+                    >
+                      Copy Link
+                    </button>
+                  </div>
 
-                  {/* Show reserve creation prompt for new uploads (no reserveId) */}
-                  {!reserveId && !stableUrl && (
+                  {/* Fund Reserve CTA */}
+                  {state.reserveSelection.type === 'new' && calculations && (
                     <div className={styles.reservePrompt}>
                       <p className={styles.reserveMessage}>
-                        <strong>Almost done!</strong> Create a reserve to enable updates and get a live URL.
+                        <strong>Keep it online permanently</strong>
+                        Fund your reserve to earn yield that pays for hosting forever. No monthly fees.
                       </p>
                       <button
                         onClick={() => {
-                          // Use the recommended reserve amount that was already calculated and shown to user
-                          const recommendedReserve = calculations?.recommendedReserve.toFixed(2) || '0';
-
-                          // Include contentHash so the feed can be initialized after reserve creation
                           router.push(
-                            `/reserves?stampId=${state.batchId}&amount=${recommendedReserve}&contentHash=${state.swarmReference}`
+                            `/reserves?stampId=${state.batchId}&contentHash=${state.swarmReference}`
                           );
                         }}
                         className={styles.ctaButton}
                         style={{ width: '100%' }}
                       >
-                        Create Reserve
+                        Fund Reserve (~{formatSmartNumber(calculations.recommendedReserve)} DAI)
                       </button>
-                    </div>
-                  )}
-
-                  {/* Show deploy to feed button if user came with reserveId but hasn't deployed yet */}
-                  {reserveId !== undefined && !stableUrl && !isDeployingToFeed && feedService.hasFeed(reserveId) && state.batchId && (
-                    <div className={styles.reservePrompt}>
-                      <p className={styles.reserveMessage}>
-                        <strong>Deploy to Feed</strong>
+                      <p className={styles.skipNote}>
+                        Skip for now - your site stays live for ~7 days
                       </p>
-                      <p className={styles.reserveMessage} style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
-                        Check the preview above. If it looks good, deploy to make it live.
-                      </p>
-                      <button
-                        onClick={async () => {
-                          if (!state.swarmReference || !state.batchId || !existingStampDepth) return;
-                          setIsDeployingToFeed(true);
-                          try {
-                            await feedService.deployVersion(
-                              reserveId,
-                              state.batchId,
-                              Number(existingStampDepth),
-                              state.swarmReference
-                            );
-                            const url = feedService.getFeedManifestUrl(reserveId);
-                            setStableUrl(url);
-                          } catch (err) {
-                            console.error('Failed to deploy to feed:', err);
-                          } finally {
-                            setIsDeployingToFeed(false);
-                          }
-                        }}
-                        className={styles.ctaButton}
-                      >
-                        Deploy
-                      </button>
-                    </div>
-                  )}
-
-                  {isDeployingToFeed && (
-                    <div className={styles.reservePrompt}>
-                      <p className={styles.reserveMessage}>Deploying to feed...</p>
                     </div>
                   )}
                 </div>

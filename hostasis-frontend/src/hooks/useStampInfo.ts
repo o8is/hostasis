@@ -84,14 +84,6 @@ export function useStampInfo(batchId: string | undefined): StampInfo {
       const blocksRemaining = balanceBigInt / priceBigInt;
       // Convert to seconds (5 second blocks on Gnosis)
       timeRemainingSeconds = Number(blocksRemaining) * 5;
-
-      console.log('Stamp calculation:', {
-        batchId: prefixedBatchId,
-        remainingBalance: balanceBigInt.toString(),
-        currentPrice: priceBigInt.toString(),
-        blocksRemaining: blocksRemaining.toString(),
-        timeRemainingDays: timeRemainingSeconds / 86400,
-      });
     }
   }
 

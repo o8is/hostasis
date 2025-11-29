@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAccount, useReadContract } from 'wagmi';
 import { POSTAGE_MANAGER_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
@@ -7,10 +7,16 @@ import UpdateStampModal from './UpdateStampModal';
 import TopUpModal from './TopUpModal';
 import ExportKeyModal from './ExportKeyModal';
 import DepositCard from './DepositCard';
+import EmptyReservesState from './EmptyReservesState';
 
 import styles from './DepositsList.module.css';
 
-export default function DepositsList() {
+interface DepositsListProps {
+  onCreateClick?: () => void;
+  initialAmount?: string;
+}
+
+export default function DepositsList({ onCreateClick, initialAmount }: DepositsListProps) {
   const { address } = useAccount();
   const [selectedDeposit, setSelectedDeposit] = useState<number | null>(null);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
@@ -18,6 +24,8 @@ export default function DepositsList() {
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [showExportKeyModal, setShowExportKeyModal] = useState(false);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
+  // Track active deposit status: Map<depositIndex, isActive>
+  const [activeStatus, setActiveStatus] = useState<Map<number, boolean>>(new Map());
 
   // Get user deposit count
   const { data: depositCount, refetch: refetchDepositCount } = useReadContract({
@@ -32,13 +40,36 @@ export default function DepositsList() {
 
   const count = depositCount ? Number(depositCount) : 0;
 
+  // Handler for when a DepositCard reports its active status
+  const handleActiveChange = useCallback((depositIndex: number, isActive: boolean) => {
+    setActiveStatus(prev => {
+      const next = new Map(prev);
+      next.set(depositIndex, isActive);
+      return next;
+    });
+  }, []);
+
+  // Reset active status when count changes (e.g., after withdrawal refetch)
+  useEffect(() => {
+    setActiveStatus(new Map());
+  }, [count, refetchTrigger]);
+
+  // Check if all deposits have reported and none are active
+  const allDepositsReported = activeStatus.size === count;
+  const hasActiveDeposits = Array.from(activeStatus.values()).some(isActive => isActive);
+  const showEmptyState = count === 0 || (allDepositsReported && !hasActiveDeposits);
+
   return (
     <>
       <div>
-        {count === 0 ? (
-          <p className="description" style={{ textAlign: 'center', marginTop: '1rem' }}>
-            No reserves yet.
-          </p>
+        {showEmptyState ? (
+          onCreateClick ? (
+            <EmptyReservesState onCreateClick={onCreateClick} initialAmount={initialAmount} />
+          ) : (
+            <p className="description" style={{ textAlign: 'center', marginTop: '1rem' }}>
+              No active reserves.
+            </p>
+          )
         ) : (
           <div className={styles.depositsGrid}>
             {Array.from({ length: count }, (_, i) => count - 1 - i).map((depositIndex) => (
@@ -47,6 +78,7 @@ export default function DepositsList() {
                 depositIndex={depositIndex}
                 userAddress={address!}
                 refetchTrigger={refetchTrigger}
+                onActiveChange={handleActiveChange}
                 onWithdraw={() => {
                   setSelectedDeposit(depositIndex);
                   setShowWithdrawModal(true);

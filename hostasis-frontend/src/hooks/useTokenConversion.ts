@@ -220,6 +220,26 @@ export function useTokenConversion() {
     return 0n;
   };
 
+  /**
+   * Convert a DAI amount to the equivalent amount in the target token.
+   * Used when the UI shows a recommended DAI value but user has a different token.
+   * - xDAI/wxDAI: 1:1 with DAI
+   * - sDAI: less sDAI needed since 1 sDAI > 1 DAI
+   */
+  const daiToTokenAmount = (daiAmount: bigint, targetToken: TokenType): bigint => {
+    if (targetToken === 'NATIVE_XDAI' || targetToken === 'WRAPPED_DAI') {
+      // 1:1 conversion
+      return daiAmount;
+    }
+    if (targetToken === 'SDAI' && exchangeRate) {
+      // sDAI is worth more than DAI, so we need fewer sDAI
+      // exchangeRate = how much DAI 1 sDAI is worth (e.g., 1.05e18 = 1 sDAI = 1.05 DAI)
+      // sDAI = DAI * 1e18 / exchangeRate
+      return (daiAmount * 10n ** 18n) / (exchangeRate as bigint);
+    }
+    return daiAmount;
+  };
+
   const getTokenLabel = (token: TokenType | null): string => {
     switch (token) {
       case 'NATIVE_XDAI': return 'xDAI';
@@ -255,11 +275,13 @@ export function useTokenConversion() {
     nativeBalance: nativeBalance?.value,
     daiBalance,
     sdaiBalance,
+    exchangeRate: exchangeRate as bigint | undefined,
     availableTokens,
     setTokenOverride,
     convertToSDAI,
     resetConversion,
     previewConversion,
+    daiToTokenAmount,
     getTokenLabel,
     getBalance,
     detectTokenType,

@@ -45,19 +45,24 @@ export class StampedUploader {
   /**
    * Wait for the postage stamp to propagate to the gateway
    * Attempts to upload a test chunk until the gateway accepts the stamp
+   * Default: 40 retries × 3 seconds = 120 seconds (2 min) max wait
    */
   private async waitForStampPropagation(
-    maxRetries = 15,
-    retryDelayMs = 2000,
+    maxRetries = 40,
+    retryDelayMs = 3000,
     onProgress?: (progress: UploadProgress) => void
   ): Promise<void> {
-    // Create a small test chunk
-    const tree = new MerkleTree(() => Promise.resolve());
-    await tree.append(new Uint8Array(0)); // Empty data
-    const testChunk = await tree.finalize();
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        // Create a UNIQUE test chunk for each attempt to avoid bucket exhaustion
+        // The Stamper tracks used indices per bucket, so same chunk = same bucket = fills up fast
+        const testData = new Uint8Array(32);
+        crypto.getRandomValues(testData); // Random data = different bucket each time
+        const tree = new MerkleTree(() => Promise.resolve());
+        await tree.append(testData);
+        const testChunk = await tree.finalize();
+
         const envelope = this.stamper.stamp(testChunk);
 
         const indexHex = Binary.uint8ArrayToHex(envelope.index);
@@ -83,8 +88,22 @@ export class StampedUploader {
         // If we get here, the stamp is recognized!
         return;
       } catch (err: any) {
-        const isStampError = err?.response?.data?.message?.toLowerCase().includes('batch') ||
-                            err?.response?.data?.message?.toLowerCase().includes('stamp');
+        // Extract error message from various possible locations
+        const responseData = err?.response?.data;
+        const dataMessage = typeof responseData === 'string'
+          ? responseData
+          : responseData?.message || responseData?.error;
+        const errorMessage = (dataMessage || err?.message || '').toLowerCase();
+        const statusCode = err?.response?.status;
+
+        // Consider it a stamp propagation issue if:
+        // - Error mentions batch, stamp, or bucket (common gateway errors during propagation)
+        // - Or it's a 400 Bad Request (gateway hasn't synced the stamp yet)
+        // - Or it's a non-axios error containing bucket/stamp (from Stamper class)
+        const isStampError = errorMessage.includes('batch') ||
+                            errorMessage.includes('stamp') ||
+                            errorMessage.includes('bucket') ||
+                            statusCode === 400;
 
         if (isStampError && attempt < maxRetries - 1) {
           // Stamp not propagated yet, wait and retry
@@ -99,14 +118,15 @@ export class StampedUploader {
           continue;
         }
 
-        // If it's not a stamp error or we've exhausted retries, throw
+        // If we've exhausted retries, throw with details
         if (attempt === maxRetries - 1) {
+          const detail = errorMessage || `status ${statusCode}`;
           throw new Error(
-            `Stamp did not propagate to gateway after ${maxRetries} attempts (${maxRetries * retryDelayMs / 1000}s)`
+            `Stamp did not propagate to gateway after ${maxRetries} attempts (${maxRetries * retryDelayMs / 1000}s). Last error: ${detail}`
           );
         }
 
-        // For other errors, also throw
+        // For non-stamp errors (like network issues), also throw
         throw err;
       }
     }
@@ -115,9 +135,10 @@ export class StampedUploader {
   }
 
   /**
-   * Upload a single chunk to the gateway
+   * Upload a single chunk to the gateway with retry logic
+   * Uses 5 retries with exponential backoff (1s, 2s, 4s, 8s, 16s = 31s total)
    */
-  private async uploadChunk(chunk: Chunk): Promise<string> {
+  private async uploadChunk(chunk: Chunk, maxRetries = 5): Promise<string> {
     const envelope = this.stamper.stamp(chunk);
 
     const indexHex = Binary.uint8ArrayToHex(envelope.index);
@@ -127,18 +148,44 @@ export class StampedUploader {
 
     const chunkData = chunk.build();
 
-    const uploadResponse = await axios.post(
-      `${this.config.gatewayUrl}/chunks`,
-      chunkData,
-      {
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'swarm-postage-stamp': postageStampHeader
-        }
-      }
-    );
+    let lastError: Error | null = null;
 
-    return uploadResponse.data.reference;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const uploadResponse = await axios.post(
+          `${this.config.gatewayUrl}/chunks`,
+          chunkData,
+          {
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'swarm-postage-stamp': postageStampHeader
+            }
+          }
+        );
+
+        return uploadResponse.data.reference;
+      } catch (err: any) {
+        lastError = err;
+        const errorMessage = err?.response?.data?.message?.toLowerCase() || '';
+        const statusCode = err?.response?.status;
+
+        // Retry on bucket/stamp errors or 400s (transient gateway sync issues)
+        const isRetryable = errorMessage.includes('bucket') ||
+                           errorMessage.includes('batch') ||
+                           errorMessage.includes('stamp') ||
+                           statusCode === 400;
+
+        if (isRetryable && attempt < maxRetries - 1) {
+          // Exponential backoff: 1s, 2s, 4s
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+          continue;
+        }
+
+        throw err;
+      }
+    }
+
+    throw lastError || new Error('Upload failed after retries');
   }
 
   /**
@@ -161,7 +208,7 @@ export class StampedUploader {
       percentage: 10
     });
 
-    await this.waitForStampPropagation(15, 2000, onProgress);
+    await this.waitForStampPropagation(40, 3000, onProgress);
 
     onProgress({
       phase: 'stamping',

@@ -37,9 +37,9 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 /**
- * Get Ethereum address from private key
+ * Get Ethereum address from private key (20 bytes)
  */
-function getAddressFromPrivateKey(privateKeyHex: string): Uint8Array {
+export function getAddressFromPrivateKey(privateKeyHex: string): Uint8Array {
   const privateKeyBytes = hexToBytes(privateKeyHex);
   const publicKey = secp256k1.getPublicKey(privateKeyBytes, false);
   const publicKeyHash = keccak_256(publicKey.slice(1));
@@ -120,8 +120,14 @@ export function makeSOCAddress(identifier: Uint8Array, owner: Uint8Array): Uint8
 }
 
 export interface WriteFeedUpdateOptions {
-  /** Reserve private key (hex string, with or without 0x prefix) */
+  /** Reserve private key (hex string, with or without 0x prefix) - used for stamping */
   reservePrivateKey: string;
+  /**
+   * Signer private key (hex string, with or without 0x prefix) - used for SOC signing.
+   * If not provided, reservePrivateKey is used for both signing and stamping.
+   * Use this when the feed owner is different from the batch owner (multi-project support).
+   */
+  signerPrivateKey?: string;
   /** Content reference to point feed to (Swarm hash, 64 hex chars) */
   contentReference: string;
   /** Feed index (incrementing integer) */
@@ -151,6 +157,7 @@ export interface WriteFeedUpdateOptions {
 export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<void> {
   const {
     reservePrivateKey,
+    signerPrivateKey,
     contentReference,
     feedIndex,
     batchId,
@@ -159,7 +166,9 @@ export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<
     topic = new Uint8Array(32) // NULL_TOPIC by default
   } = options;
 
-  const owner = getAddressFromPrivateKey(reservePrivateKey);
+  // Use signerPrivateKey for SOC owner/signing if provided, otherwise use reservePrivateKey
+  const socPrivateKey = signerPrivateKey || reservePrivateKey;
+  const owner = getAddressFromPrivateKey(socPrivateKey);
   const identifier = makeFeedIdentifier(topic, feedIndex);
 
   // Create content: timestamp (8 bytes BE) + reference (32 bytes)
@@ -180,10 +189,11 @@ export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<
   const chunkAddress = calculateChunkAddress(span, content);
 
   // Sign: keccak256(identifier || chunkAddress) with Ethereum prefix
+  // Use the SOC private key (project key) for signing the feed update
   const toSignBytes = keccak_256(new Uint8Array([...identifier, ...chunkAddress]));
 
   // Use viem to sign with Ethereum prefix
-  const account = privateKeyToAccount(`0x${reservePrivateKey.replace(/^0x/, '')}`);
+  const account = privateKeyToAccount(`0x${socPrivateKey.replace(/^0x/, '')}`);
   const signatureHex = await account.signMessage({
     message: { raw: toSignBytes }
   });
@@ -197,10 +207,10 @@ export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<
   // Calculate SOC address for stamping
   const socAddress = makeSOCAddress(identifier, owner);
 
-  // Stamp the SOC
+  // Stamp the SOC using the reserve key (batch owner)
   const normalizedBatchId = batchId.replace(/^0x/, '');
-  const privateKeyWithoutPrefix = reservePrivateKey.replace(/^0x/, '');
-  const stamper = Stamper.fromBlank(privateKeyWithoutPrefix, normalizedBatchId, depth);
+  const stampPrivateKey = reservePrivateKey.replace(/^0x/, '');
+  const stamper = Stamper.fromBlank(stampPrivateKey, normalizedBatchId, depth);
 
   // Create a mock chunk for stamping
   const mockChunk = {

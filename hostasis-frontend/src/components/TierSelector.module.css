@@ -1,0 +1,81 @@
+.container {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .container {
+    grid-template-columns: 1fr;
+  }
+}
+
+.tierOption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.tierOption:hover:not(:disabled):not(.tooSmall) {
+  background: rgba(74, 158, 255, 0.08);
+  border-color: #4a9eff;
+}
+
+.tierOption.selected {
+  background: rgba(74, 158, 255, 0.15);
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 1px #4a9eff;
+}
+
+.tierOption.tooSmall {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tierOption:disabled {
+  cursor: not-allowed;
+}
+
+.tierHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-bottom: 0.25rem;
+}
+
+.tierName {
+  font-weight: 600;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.recommendedBadge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.15);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tierCapacity {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #4a9eff;
+  margin-bottom: 0.25rem;
+}
+
+.tierDescription {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}

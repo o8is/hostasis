@@ -11,6 +11,7 @@ const STORAGE_PREFIX = 'hostasis_feed_';
 interface FeedData {
   ownerAddress: string;     // Feed owner address (20 bytes hex, for /feeds/{owner}/{topic} URL)
   manifestUrl?: string;     // Feed manifest URL (/bzz/{hash}/ - the public URL for the feed)
+  manifestReference?: string; // Feed manifest reference hash
   currentVersion?: string;  // Current content hash
   currentIndex?: number;    // Current feed index (increments with each deployment)
   updatedAt?: number;       // Last update timestamp
@@ -108,7 +109,7 @@ export function getFeedManifestUrl(reserveIndex: number): string | null {
  * Set the feed manifest URL for a reserve
  * Called once when the feed is initialized
  */
-export function setFeedManifestUrl(reserveIndex: number, manifestUrl: string): void {
+export function setFeedManifestUrl(reserveIndex: number, manifestUrl: string, manifestReference?: string): void {
   const existing = getFeedData(reserveIndex);
   if (!existing) {
     console.warn(`Cannot set manifest URL for reserve ${reserveIndex}: no feed data found`);
@@ -118,8 +119,18 @@ export function setFeedManifestUrl(reserveIndex: number, manifestUrl: string): v
   setFeedData(reserveIndex, {
     ...existing,
     manifestUrl,
+    ...(manifestReference && { manifestReference }),
     updatedAt: Date.now(),
   });
+}
+
+/**
+ * Get the feed manifest reference for a reserve
+ * Returns the hash that can be used with any gateway
+ */
+export function getFeedManifestReference(reserveIndex: number): string | null {
+  const data = getFeedData(reserveIndex);
+  return data?.manifestReference ?? null;
 }
 
 /**

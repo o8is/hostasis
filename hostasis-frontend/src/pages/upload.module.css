@@ -296,6 +296,73 @@
   font-style: italic;
 }
 
+/* Config Section */
+.configSection {
+  margin-bottom: 1.5rem;
+}
+
+.configLabel {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #b0b0b0;
+  margin-bottom: 0.75rem;
+}
+
+.configInput {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  font-size: 1rem;
+  color: #e0e0e0;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.configInput:focus {
+  border-color: var(--o8-tertiary);
+}
+
+.configInput::placeholder {
+  color: #5a5a5a;
+}
+
+.slugPreview {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #6a6a6a;
+}
+
+.slugPreview code {
+  color: #4a9eff;
+  background: rgba(74, 158, 255, 0.1);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.inputError {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #ff6b6b;
+}
+
+/* Action Buttons */
+.actionButtons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.skipNote {
+  font-size: 0.8rem;
+  color: #6a6a6a;
+  margin-top: 0.75rem;
+}
+
 /* SPA Option */
 .spaOption {
   background: rgba(0, 0, 0, 0.2);
@@ -576,12 +643,16 @@
 }
 
 .swarmLink {
-  display: inline-block;
+  display: block;
   color: var(--o8-primary);
   text-decoration: underline;
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 600;
   transition: opacity 0.2s ease;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .swarmLink:hover {
@@ -615,6 +686,10 @@
 
 .reservePrompt button {
   margin-top: 0.5rem;
+}
+
+.reservePrompt .skipNote {
+  margin-top: 1.25rem;
 }
 
 /* Debug Banner */
