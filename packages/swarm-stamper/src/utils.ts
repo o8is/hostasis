@@ -64,6 +64,20 @@ export function swarmHashToCid(swarmHash: string): string {
 }
 
 /**
+ * Convert a CID back to a Swarm reference hash
+ * Inverse operation of swarmHashToCid
+ */
+export function cidToSwarmHash(cidString: string): string {
+  const cid = CID.parse(cidString);
+
+  // Extract the hash bytes from the multihash
+  const hashBytes = cid.multihash.digest;
+
+  // Convert to hex string (without 0x prefix)
+  return Binary.uint8ArrayToHex(hashBytes);
+}
+
+/**
  * Build a Swarm mantaray manifest for a collection of files
  */
 export async function buildMantarayManifest(

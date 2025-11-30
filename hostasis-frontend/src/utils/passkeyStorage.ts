@@ -50,32 +50,8 @@ export function storeCredentialId(credentialId: string): void {
 }
 
 /**
- * Retrieve the credential ID
- */
-export function retrieveCredentialId(): string | null {
-  try {
-    return localStorage.getItem(CREDENTIAL_ID_STORAGE_KEY);
-  } catch (error) {
-    console.error('Failed to retrieve credential ID:', error);
-    return null;
-  }
-}
-
-/**
  * Check if a passkey wallet has been configured
  */
 export function hasPasskeyWallet(): boolean {
   return retrieveSalt() !== null;
-}
-
-/**
- * Clear all passkey-related data (useful for testing or reset)
- */
-export function clearPasskeyData(): void {
-  try {
-    localStorage.removeItem(SALT_STORAGE_KEY);
-    localStorage.removeItem(CREDENTIAL_ID_STORAGE_KEY);
-  } catch (error) {
-    console.error('Failed to clear passkey data:', error);
-  }
 }

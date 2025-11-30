@@ -7,8 +7,6 @@ export interface ReserveKeyInfo {
   address: Hex;
 }
 
-// Backward compatibility: FeedKeyInfo is now just an alias for ReserveKeyInfo
-export type FeedKeyInfo = ReserveKeyInfo;
 
 /**
  * Convert hex string to Uint8Array
@@ -79,14 +77,3 @@ export function deriveReserveKey(passkeyPrivateKey: Hex, reserveIndex: number): 
     address: `0x${bytesToHex(addressBytes)}` as Hex,
   };
 }
-
-/**
- * @deprecated Use deriveReserveKey instead. This is kept for backward compatibility.
- */
-export const deriveFeedKey = deriveReserveKey;
-
-/**
- * NULL_TOPIC constant - all zeros, used for feed topic
- * Each reserve has its own derived key, so we don't need custom topics
- */
-export const NULL_TOPIC = '0x0000000000000000000000000000000000000000000000000000000000000000';

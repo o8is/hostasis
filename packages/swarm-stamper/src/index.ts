@@ -10,6 +10,7 @@ export {
   getContentType,
   normalizeBatchId,
   swarmHashToCid,
+  cidToSwarmHash,
   buildMantarayManifest,
   saveMantarayNodeRecursively,
   uploadWithMerkleTree

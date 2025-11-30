@@ -8,6 +8,7 @@ import Navigation from '../components/Navigation';
 import FileDropZone from '../components/FileDropZone';
 import ReserveSelector, { type ReserveSelection } from '../components/ReserveSelector';
 import ReserveCard from '../components/ReserveCard';
+import { CopyDropdownButton, type CopyOption } from '../components/CopyDropdownButton';
 import { POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
@@ -684,62 +685,107 @@ const Upload: NextPage = () => {
           {state.step === 'complete' && (
             <div className={styles.complete}>
               <div className={styles.completeIcon}>✓</div>
-              <h2>{isUpdateMode ? 'Update published!' : 'Your site is live!'}</h2>
+              <h2>{isUpdateMode ? 'Update published!' : 'Deploy successful!'}</h2>
 
-              {state.swarmUrl && (
-                <div className={styles.completeActions}>
-                  <a
-                    href={state.swarmUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.swarmLink}
-                  >
-                    {state.swarmUrl}
-                  </a>
+              {state.swarmUrl && (() => {
+                const copyOptions: CopyOption[] = [
+                  {
+                    label: 'Live URL',
+                    value: state.swarmUrl,
+                    description: 'Full URL with gateway'
+                  }
+                ];
 
-                  <div className={styles.actionButtons}>
-                    <a
-                      href={state.swarmUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={styles.ctaButton}
-                      style={{ textDecoration: 'none', display: 'inline-block' }}
-                    >
-                      Open Site
-                    </a>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(state.swarmUrl || '')}
-                      className={styles.secondaryButton}
-                    >
-                      Copy Link
-                    </button>
-                  </div>
+                if (state.swarmReference) {
+                  copyOptions.push({
+                    label: 'Swarm Reference',
+                    value: state.swarmReference,
+                    description: 'Content hash'
+                  });
+                }
 
-                  {/* Fund Reserve CTA */}
-                  {state.reserveSelection.type === 'new' && calculations && (
-                    <div className={styles.reservePrompt}>
-                      <p className={styles.reserveMessage}>
-                        <strong>Keep it online permanently</strong>
-                        Fund your reserve to earn yield that pays for hosting forever. No monthly fees.
-                      </p>
-                      <button
-                        onClick={() => {
-                          router.push(
-                            `/reserves?stampId=${state.batchId}&contentHash=${state.swarmReference}`
-                          );
-                        }}
-                        className={styles.ctaButton}
-                        style={{ width: '100%' }}
+                return (
+                  <div className={styles.completeCard}>
+                    {/* Project Header */}
+                    <div className={styles.projectHeader}>
+                      <div className={styles.projectTitle}>
+                        <span className={styles.projectName}>{state.projectName}</span>
+                        {state.reserveIndex !== undefined && (
+                          <span className={styles.reserveLink}>
+                            Reserve #{state.reserveIndex}
+                          </span>
+                        )}
+                      </div>
+                      <a
+                        href={state.swarmUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.viewSiteLink}
                       >
-                        Fund Reserve (~{formatSmartNumber(calculations.recommendedReserve)} DAI)
-                      </button>
-                      <p className={styles.skipNote}>
-                        Skip for now - your site stays live for ~7 days
-                      </p>
+                        View Site ↗
+                      </a>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {/* URL Display */}
+                    <div className={styles.urlDisplay}>
+                      <a
+                        href={state.swarmUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={styles.urlLink}
+                      >
+                        {state.swarmUrl}
+                      </a>
+                      <CopyDropdownButton options={copyOptions} size="small" />
+                    </div>
+
+                    {/* Main Actions */}
+                    <div className={styles.completeActions}>
+                      {state.reserveSelection.type === 'existing' && state.reserveIndex !== undefined ? (
+                        <>
+                          <button
+                            onClick={() => router.push('/reserves')}
+                            className={styles.ctaButton}
+                          >
+                            Back to Reserves
+                          </button>
+                          <button
+                            onClick={handleReset}
+                            className={styles.secondaryButton}
+                          >
+                            Deploy Another
+                          </button>
+                        </>
+                      ) : (
+                        /* Fund Reserve CTA for new batch */
+                        calculations && (
+                          <>
+                            <button
+                              onClick={() => {
+                                router.push(
+                                  `/reserves?stampId=${state.batchId}&contentHash=${state.swarmReference}`
+                                );
+                              }}
+                              className={styles.ctaButton}
+                            >
+                              Fund Reserve (~{formatSmartNumber(calculations.recommendedReserve)} DAI)
+                            </button>
+                            <p className={styles.fundNote}>
+                              Keep it online permanently with yield-generating reserves
+                            </p>
+                            <button
+                              onClick={handleReset}
+                              className={styles.secondaryButton}
+                            >
+                              Deploy Another
+                            </button>
+                          </>
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

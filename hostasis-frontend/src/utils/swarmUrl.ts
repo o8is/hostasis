@@ -7,7 +7,7 @@
 
 import { SWARM_GATEWAY_URL } from '../contracts/addresses';
 import type { UploadMetadata, UploadRecord } from './uploadHistory';
-import { swarmHashToCid } from './swarmCid';
+import { swarmHashToCid } from '@hostasis/swarm-stamper';
 
 /**
  * Build a Swarm URL from a reference hash and metadata

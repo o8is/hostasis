@@ -5,8 +5,7 @@ import { usePasskeyWallet } from './usePasskeyWallet';
 import { SWARM_GATEWAY_URL } from '../contracts/addresses';
 import { hasFeed as checkHasFeed, setFeedOwner, setCurrentVersion, getFeedOwner, setFeedManifestUrl, getFeedManifestUrl as getStoredManifestUrl, getCurrentFeedIndex, setCurrentFeedIndex } from '../utils/feedStorage';
 import { MantarayNode } from '@ethersphere/bee-js';
-import { saveMantarayNodeRecursively, uploadWithStamper } from '../utils/swarmUpload';
-import { swarmHashToCid } from '../utils/swarmCid';
+import { uploadWithStamper } from '../utils/swarmUpload';
 import { hasPasskeyWallet } from '../utils/passkeyStorage';
 import {
   deriveProjectKey,
@@ -14,6 +13,8 @@ import {
   makeFeedIdentifier,
   makeSOCAddress,
   getAddressFromPrivateKey,
+  swarmHashToCid,
+  saveMantarayNodeRecursively,
 } from '@hostasis/swarm-stamper';
 import { deriveReserveKey } from '../utils/reserveKeys';
 import { getProject, updateProject } from '../utils/projectStorage';

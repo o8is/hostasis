@@ -523,13 +523,96 @@
 .complete h2 {
   font-size: 1.8rem;
   color: #e0e0e0;
-  margin: 0 0 1rem;
+  margin: 0 0 2rem;
 }
 
 .complete p {
   color: #8a8a8a;
   margin: 0;
   line-height: 1.6;
+}
+
+/* Complete Card */
+.completeCard {
+  max-width: 600px;
+  margin: 0 auto;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: left;
+}
+
+.projectHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.projectTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.projectName {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.reserveLink {
+  font-size: 0.85rem;
+  color: #7a7a7a;
+}
+
+.viewSiteLink {
+  font-size: 0.95rem;
+  color: #4a9eff;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
+}
+
+.viewSiteLink:hover {
+  opacity: 0.8;
+  text-decoration: underline;
+}
+
+.urlDisplay {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: rgba(74, 158, 255, 0.08);
+  border: 1px solid rgba(74, 158, 255, 0.2);
+  border-radius: 8px;
+}
+
+.urlLink {
+  flex: 1;
+  font-size: 0.85rem;
+  color: #4a9eff;
+  font-family: monospace;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.urlLink:hover {
+  text-decoration: underline;
+}
+
+.fundNote {
+  font-size: 0.9rem;
+  color: #8a8a8a;
+  margin: -0.5rem 0 0 0;
+  text-align: center;
 }
 
 /* Upload Features */

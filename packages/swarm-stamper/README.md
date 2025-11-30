@@ -26,7 +26,7 @@ npm install @hostasis/swarm-stamper
 import { StampedUploader } from '@hostasis/swarm-stamper';
 
 const uploader = new StampedUploader({
-  gatewayUrl: 'https://gateway.ethswarm.org',
+  gatewayUrl: 'https://swarm.o8.is',
   batchId: '0x...', // Your postage batch ID
   privateKey: '0x...', // Your private key for signing
   depth: 20

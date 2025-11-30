@@ -166,39 +166,3 @@ export function setCurrentFeedIndex(reserveIndex: number, index: number): void {
 export function hasFeed(reserveIndex: number): boolean {
   return getFeedOwner(reserveIndex) !== null;
 }
-
-/**
- * Get the last update timestamp for a reserve's feed
- */
-export function getLastUpdated(reserveIndex: number): number | null {
-  const data = getFeedData(reserveIndex);
-  return data?.updatedAt ?? null;
-}
-
-/**
- * Clear feed data for a reserve (e.g., when reserve is cancelled)
- */
-export function clearFeedData(reserveIndex: number): void {
-  if (typeof window === 'undefined') return;
-  
-  localStorage.removeItem(getStorageKey(reserveIndex));
-}
-
-/**
- * Get all reserves that have feed data
- */
-export function getAllFeedReserves(): number[] {
-  if (typeof window === 'undefined') return [];
-  
-  const reserves: number[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key?.startsWith(STORAGE_PREFIX)) {
-      const index = parseInt(key.slice(STORAGE_PREFIX.length), 10);
-      if (!isNaN(index)) {
-        reserves.push(index);
-      }
-    }
-  }
-  return reserves.sort((a, b) => a - b);
-}
