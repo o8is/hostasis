@@ -18,10 +18,11 @@ const config = {
   managerAddress: process.env.KEEPER_MANAGER_ADDRESS || '',
   privateKey: process.env.KEEPER_PRIVATE_KEY || '',
   harvestCheckInterval: parseInt(process.env.KEEPER_HARVEST_INTERVAL || '300000', 10),
-  batchCheckInterval: parseInt(process.env.KEEPER_BATCH_INTERVAL || '300000', 10),
+  batchCheckInterval: parseInt(process.env.KEEPER_BATCH_INTERVAL || '60000', 10),
   batchSize: parseInt(process.env.KEEPER_BATCH_SIZE || '20', 10),
   harvestGasEstimate: parseInt(process.env.KEEPER_HARVEST_GAS || '370000', 10),
   batchGasEstimate: parseInt(process.env.KEEPER_BATCH_GAS || '1135000', 10),
+  unwrapGasEstimate: parseInt(process.env.KEEPER_UNWRAP_GAS || '35000', 10),
   minProfitMarginPercent: parseInt(process.env.KEEPER_MIN_PROFIT_MARGIN || '1', 10)
 };
 
@@ -129,6 +130,7 @@ Configuration (Environment Variables):
     KEEPER_BATCH_SIZE         Number of users to process per batch (default: 20)
     KEEPER_HARVEST_GAS        Estimated gas for harvest operation (default: 370000)
     KEEPER_BATCH_GAS          Estimated gas for batch processing (default: 1135000)
+    KEEPER_UNWRAP_GAS         Estimated gas for wxDAI unwrap operation (default: 35000)
     KEEPER_MIN_PROFIT_MARGIN  Minimum profit margin above gas costs in percent (default: 1)
 
 Example:

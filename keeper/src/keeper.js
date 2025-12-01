@@ -9,7 +9,7 @@
 
 const { ethers } = require('ethers');
 
-// Contract ABI (minimal - only what we need)
+// Contract ABIs (minimal - only what we need)
 const MANAGER_ABI = [
   'function previewYield() external view returns (uint256)',
   'function minYieldThreshold() external view returns (uint256)',
@@ -19,6 +19,13 @@ const MANAGER_ABI = [
   'function distributionState() external view returns (uint256 totalBZZ, uint256 cursor, uint256 snapshotTotalSDAI, bool active)',
   'function keeperFeePool() external view returns (uint256)',
   'function harvesterFeeBps() external view returns (uint256)'
+];
+
+// wxDAI (Wrapped xDAI) contract on Gnosis Chain
+const WXDAI_ADDRESS = '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d';
+const WXDAI_ABI = [
+  'function balanceOf(address) external view returns (uint256)',
+  'function withdraw(uint256 wad) external'
 ];
 
 class HostasisKeeper {
@@ -35,10 +42,16 @@ class HostasisKeeper {
     this.provider = new ethers.JsonRpcProvider(this.config.rpcUrl);
     this.wallet = new ethers.Wallet(this.config.privateKey, this.provider);
 
-    // Setup contract
+    // Setup contracts
     this.manager = new ethers.Contract(
       this.config.managerAddress,
       MANAGER_ABI,
+      this.wallet
+    );
+
+    this.wxdai = new ethers.Contract(
+      WXDAI_ADDRESS,
+      WXDAI_ABI,
       this.wallet
     );
 
@@ -86,6 +99,34 @@ class HostasisKeeper {
   }
 
   /**
+   * Unwrap wxDAI to xDAI for gas
+   */
+  async unwrapWxDAI() {
+    try {
+      const wxdaiBalance = await this.wxdai.balanceOf(this.wallet.address);
+
+      if (wxdaiBalance === 0n) {
+        return;
+      }
+
+      console.log(`Unwrapping ${ethers.formatEther(wxdaiBalance)} wxDAI to xDAI...`);
+
+      const tx = await this.wxdai.withdraw(wxdaiBalance, {
+        gasLimit: this.config.unwrapGasEstimate
+      });
+
+      console.log(`Unwrap transaction sent: ${tx.hash}`);
+      const receipt = await tx.wait();
+
+      console.log(`Unwrap successful! Gas used: ${receipt.gasUsed.toString()}`);
+      console.log(`Converted ${ethers.formatEther(wxdaiBalance)} wxDAI to xDAI`);
+
+    } catch (error) {
+      console.error('Error unwrapping wxDAI:', error.message);
+    }
+  }
+
+  /**
    * Check if harvest is profitable and execute
    */
   async checkAndHarvest() {
@@ -121,16 +162,18 @@ class HostasisKeeper {
 
       console.log(`Expected harvester fee: ${ethers.formatEther(harvesterFee)} DAI`);
 
-      // Estimate gas cost
+      // Estimate gas cost (harvest + unwrap)
       const feeData = await this.provider.getFeeData();
       const gasPrice = feeData.gasPrice;
-      const estimatedGas = this.config.harvestGasEstimate;
-      const gasCostWei = gasPrice * BigInt(estimatedGas);
+      const harvestGas = BigInt(this.config.harvestGasEstimate);
+      const unwrapGas = BigInt(this.config.unwrapGasEstimate);
+      const totalGas = harvestGas + unwrapGas;
+      const gasCostWei = gasPrice * totalGas;
 
       // Convert gas cost from xDAI to DAI equivalent (1:1 on Gnosis)
       const gasCostDAI = gasCostWei;
 
-      console.log(`Estimated gas cost: ${ethers.formatEther(gasCostDAI)} DAI`);
+      console.log(`Estimated gas cost (harvest + unwrap): ${ethers.formatEther(gasCostDAI)} DAI`);
       console.log(`Net profit: ${ethers.formatEther(harvesterFee - gasCostDAI)} DAI`);
 
       // Check profitability with configured profit margin
@@ -145,14 +188,14 @@ class HostasisKeeper {
       this.harvesting = true;
 
       const tx = await this.manager.harvest({
-        gasLimit: estimatedGas
+        gasLimit: harvestGas
       });
 
       console.log(`Harvest transaction sent: ${tx.hash}`);
       const receipt = await tx.wait();
 
       console.log(`Harvest successful! Gas used: ${receipt.gasUsed.toString()}`);
-      console.log(`Harvester fee earned: ${ethers.formatEther(harvesterFee)} DAI`);
+      console.log(`Harvester fee earned: ${ethers.formatEther(harvesterFee)} wxDAI`);
 
       this.harvesting = false;
 
@@ -207,14 +250,16 @@ class HostasisKeeper {
       console.log(`Batch opportunity: ${remainingUsers} users remaining`);
       console.log(`Estimated reward: ${ethers.formatEther(estimatedReward)} DAI`);
 
-      // Estimate gas cost
+      // Estimate gas cost (batch + unwrap)
       const feeData = await this.provider.getFeeData();
       const gasPrice = feeData.gasPrice;
-      const estimatedGas = this.config.batchGasEstimate;
-      const gasCostWei = gasPrice * BigInt(estimatedGas);
+      const batchGas = BigInt(this.config.batchGasEstimate);
+      const unwrapGas = BigInt(this.config.unwrapGasEstimate);
+      const totalGas = batchGas + unwrapGas;
+      const gasCostWei = gasPrice * totalGas;
       const gasCostDAI = gasCostWei; // 1:1 on Gnosis
 
-      console.log(`Estimated gas cost: ${ethers.formatEther(gasCostDAI)} DAI`);
+      console.log(`Estimated gas cost (batch + unwrap): ${ethers.formatEther(gasCostDAI)} DAI`);
       console.log(`Net profit: ${ethers.formatEther(estimatedReward - gasCostDAI)} DAI`);
 
       // Check profitability
@@ -229,14 +274,14 @@ class HostasisKeeper {
       this.processingBatch = true;
 
       const tx = await this.manager.processBatch(batchSize, {
-        gasLimit: estimatedGas
+        gasLimit: batchGas
       });
 
       console.log(`Batch processing transaction sent: ${tx.hash}`);
       const receipt = await tx.wait();
 
       console.log(`Batch processed successfully! Gas used: ${receipt.gasUsed.toString()}`);
-      console.log(`Keeper fee earned: ${ethers.formatEther(estimatedReward)} DAI`);
+      console.log(`Keeper fee earned: ${ethers.formatEther(estimatedReward)} wxDAI`);
 
       this.processingBatch = false;
 
@@ -248,6 +293,8 @@ class HostasisKeeper {
         setTimeout(() => this.checkAndProcessBatches(), 5000);
       } else {
         console.log('Distribution complete!');
+        // Unwrap all accumulated wxDAI to xDAI for gas
+        await this.unwrapWxDAI();
       }
 
     } catch (error) {
@@ -266,6 +313,7 @@ class HostasisKeeper {
   async getStatus() {
     try {
       const balance = await this.provider.getBalance(this.wallet.address);
+      const wxdaiBalance = await this.wxdai.balanceOf(this.wallet.address);
       const yieldAvailable = await this.manager.previewYield();
       const distState = await this.manager.distributionState();
       const keeperFeePool = await this.manager.keeperFeePool();
@@ -273,6 +321,7 @@ class HostasisKeeper {
       return {
         keeperAddress: this.wallet.address,
         xdaiBalance: ethers.formatEther(balance),
+        wxdaiBalance: ethers.formatEther(wxdaiBalance),
         yieldAvailable: ethers.formatEther(yieldAvailable),
         distributionActive: distState.active,
         remainingBZZ: ethers.formatEther(distState.totalBZZ),
@@ -296,6 +345,7 @@ class HostasisKeeper {
       console.log('\n=== Keeper Status ===');
       console.log(`Keeper Address: ${status.keeperAddress}`);
       console.log(`xDAI Balance: ${status.xdaiBalance}`);
+      console.log(`wxDAI Balance: ${status.wxdaiBalance}`);
       console.log(`Yield Available: ${status.yieldAvailable} DAI`);
       console.log(`Distribution Active: ${status.distributionActive}`);
       console.log(`Remaining BZZ: ${status.remainingBZZ}`);

@@ -16,6 +16,7 @@ services:
       # - KEEPER_BATCH_SIZE=20
       # - KEEPER_HARVEST_GAS=370000
       # - KEEPER_BATCH_GAS=1135000
+      # - KEEPER_UNWRAP_GAS=35000
       # - KEEPER_MIN_PROFIT_MARGIN=1
     expose:
       - port: 8080
