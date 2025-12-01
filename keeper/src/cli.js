@@ -7,32 +7,34 @@
  */
 
 const HostasisKeeper = require('./keeper');
-const fs = require('fs');
-const path = require('path');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
 const command = args[0];
 
-// Load config
-let config;
-try {
-  const configPath = path.join(__dirname, '../config/config.json');
-  config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-} catch (error) {
-  console.error('Error loading config.json:', error.message);
-  console.error('\nPlease create config/config.json based on config.example.json');
+// Load configuration from environment variables with sensible defaults
+const config = {
+  rpcUrl: process.env.KEEPER_RPC_URL || 'https://rpc.gnosischain.com',
+  managerAddress: process.env.KEEPER_MANAGER_ADDRESS || '',
+  privateKey: process.env.KEEPER_PRIVATE_KEY || '',
+  harvestCheckInterval: parseInt(process.env.KEEPER_HARVEST_INTERVAL || '300000', 10),
+  batchCheckInterval: parseInt(process.env.KEEPER_BATCH_INTERVAL || '300000', 10),
+  batchSize: parseInt(process.env.KEEPER_BATCH_SIZE || '20', 10),
+  harvestGasEstimate: parseInt(process.env.KEEPER_HARVEST_GAS || '370000', 10),
+  batchGasEstimate: parseInt(process.env.KEEPER_BATCH_GAS || '1135000', 10),
+  minProfitMarginPercent: parseInt(process.env.KEEPER_MIN_PROFIT_MARGIN || '1', 10)
+};
+
+// Validate required configuration
+if (!config.managerAddress) {
+  console.error('Error: KEEPER_MANAGER_ADDRESS environment variable is required');
+  console.error('Set it to your deployed PostageYieldManager contract address');
   process.exit(1);
 }
 
-// Validate config
-if (!config.managerAddress || config.managerAddress === 'YOUR_DEPLOYED_MANAGER_ADDRESS') {
-  console.error('Error: managerAddress not configured in config.json');
-  process.exit(1);
-}
-
-if (!config.privateKey || config.privateKey === 'YOUR_KEEPER_PRIVATE_KEY') {
-  console.error('Error: privateKey not configured in config.json');
+if (!config.privateKey) {
+  console.error('Error: KEEPER_PRIVATE_KEY environment variable is required');
+  console.error('Set it to your keeper wallet private key (needs xDAI for gas)');
   console.error('WARNING: Never commit your private key to git!');
   process.exit(1);
 }
@@ -115,17 +117,24 @@ Examples:
   node cli.js status         # Check current system status
   node cli.js once           # One-time harvest and process
 
-Configuration:
-  Edit config/config.json to configure RPC URL, contract address,
-  private key, and other parameters.
+Configuration (Environment Variables):
+  Required:
+    KEEPER_MANAGER_ADDRESS    Address of deployed PostageYieldManager contract
+    KEEPER_PRIVATE_KEY        Private key of keeper wallet (needs xDAI for gas)
 
-  See config/config.example.json for reference.
+  Optional (with defaults):
+    KEEPER_RPC_URL            Gnosis Chain RPC endpoint (default: https://rpc.gnosischain.com)
+    KEEPER_HARVEST_INTERVAL   How often to check for harvest opportunities in ms (default: 300000)
+    KEEPER_BATCH_INTERVAL     How often to check for batch processing in ms (default: 60000)
+    KEEPER_BATCH_SIZE         Number of users to process per batch (default: 20)
+    KEEPER_HARVEST_GAS        Estimated gas for harvest operation (default: 370000)
+    KEEPER_BATCH_GAS          Estimated gas for batch processing (default: 1135000)
+    KEEPER_MIN_PROFIT_MARGIN  Minimum profit margin above gas costs in percent (default: 1)
 
-Environment:
-  You can also use environment variables to override config:
-    KEEPER_RPC_URL
-    KEEPER_MANAGER_ADDRESS
-    KEEPER_PRIVATE_KEY
+Example:
+  export KEEPER_MANAGER_ADDRESS=0x1234...
+  export KEEPER_PRIVATE_KEY=0xabcd...
+  node cli.js start
 
 Press Ctrl+C to stop the keeper bot gracefully.
       `);

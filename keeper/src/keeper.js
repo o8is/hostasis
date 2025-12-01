@@ -8,7 +8,6 @@
  */
 
 const { ethers } = require('ethers');
-const config = require('../config/config.json');
 
 // Contract ABI (minimal - only what we need)
 const MANAGER_ABI = [
@@ -23,8 +22,11 @@ const MANAGER_ABI = [
 ];
 
 class HostasisKeeper {
-  constructor(configOverrides = {}) {
-    this.config = { ...config, ...configOverrides };
+  constructor(config) {
+    if (!config) {
+      throw new Error('Config is required');
+    }
+    this.config = config;
     this.isRunning = false;
     this.processingBatch = false;
     this.harvesting = false;

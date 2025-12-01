@@ -1,0 +1,47 @@
+---
+version: "2.0"
+
+services:
+  keeper:
+    image: ghcr.io/o8is/hostasis-keeper:latest
+    env:
+      # Required: Set these before deploying
+      - KEEPER_MANAGER_ADDRESS=
+      - KEEPER_PRIVATE_KEY=
+
+      # Optional: Uncomment to override defaults
+      # - KEEPER_RPC_URL=https://rpc.gnosischain.com
+      # - KEEPER_HARVEST_INTERVAL=300000
+      # - KEEPER_BATCH_INTERVAL=60000
+      # - KEEPER_BATCH_SIZE=20
+      # - KEEPER_HARVEST_GAS=370000
+      # - KEEPER_BATCH_GAS=1135000
+      # - KEEPER_MIN_PROFIT_MARGIN=1
+    expose:
+      - port: 8080
+        as: 80
+        to:
+          - global: true
+
+profiles:
+  compute:
+    keeper:
+      resources:
+        cpu:
+          units: 0.5
+        memory:
+          size: 512Mi
+        storage:
+          size: 512Mi
+  placement:
+    akash:
+      pricing:
+        keeper:
+          denom: uakt
+          amount: 1000
+
+deployment:
+  keeper:
+    akash:
+      profile: keeper
+      count: 1
