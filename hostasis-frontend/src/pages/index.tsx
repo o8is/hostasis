@@ -27,7 +27,7 @@ const Home: NextPage = () => {
         {/* Hero Section */}
         <div className="hero-section">
           <h1 className="hero-headline">
-            Upload once. Host forever.
+            Pay once. Host forever.
           </h1>
           <p className="hero-subheadline">
             Your storage is paid for by yield - permanently.
