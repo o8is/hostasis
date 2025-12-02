@@ -1,4 +1,18 @@
 import { EFFECTIVE_CAPACITY_BYTES } from '../hooks/useCreatePostageBatch';
+import { RESERVE_TIERS } from './projectStorage';
+
+// Map depth to tier name
+const DEPTH_TO_TIER_NAME: Record<number, string> = Object.fromEntries(
+  Object.values(RESERVE_TIERS).map(tier => [tier.depth, tier.name])
+);
+
+/**
+ * Get the tier name (Starter, Basic, etc.) based on depth
+ */
+export function getTierNameByDepth(depth: number | undefined): string | null {
+  if (!depth) return null;
+  return DEPTH_TO_TIER_NAME[depth] || null;
+}
 
 /**
  * Get plan tier name based on batch depth and effective capacity

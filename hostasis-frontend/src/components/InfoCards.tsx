@@ -15,7 +15,7 @@ const infoCards: InfoCard[] = [
   {
     step: "2",
     title: "Earn",
-    description: "Your reserve earns yield automatically - your funds never leave the vault."
+    description: "Your reserve earns yield automatically. Your funds never leave the vault."
   },
   {
     step: "3",

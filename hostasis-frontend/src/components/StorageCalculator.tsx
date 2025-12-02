@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useStorageCalculator } from '../hooks/useStorageCalculator';
-import { getPlanTierName } from '../utils/storagePlan';
+import { getPlanTierName, getTierNameByDepth } from '../utils/storagePlan';
 
 const StorageCalculator: React.FC = () => {
   const [storageAmount, setStorageAmount] = useState<string>('50');
@@ -94,7 +94,10 @@ const StorageCalculator: React.FC = () => {
                 <div className="cost-breakdown-item">
                   <span className="cost-label">Storage Plan</span>
                   <span className="cost-dots"></span>
-                  <span className="cost-value">{getPlanTierName(calculations.depth)} (Depth {calculations.depth})</span>
+                  <span className="cost-value">
+                    {getPlanTierName(calculations.depth)}
+                    {getTierNameByDepth(calculations.depth) && ` (${getTierNameByDepth(calculations.depth)})`}
+                  </span>
                 </div>
               )}
             </div>
@@ -106,10 +109,10 @@ const StorageCalculator: React.FC = () => {
             </div>
 
             <Link
-              href={`/reserves?amount=${calculations.totalUpfrontCost.toFixed(2)}`}
+              href="/upload"
               className="calculator-cta-button"
             >
-              Get Started with {calculations.totalUpfrontCost.toFixed(2)} DAI
+              Get Started
             </Link>
 
             <button
