@@ -65,6 +65,9 @@ class HostasisKeeper {
     console.log('Starting Hostasis Keeper Bot...');
     this.isRunning = true;
 
+    // Unwrap any accumulated wxDAI on start
+    await this.unwrapWxDAI();
+
     // Initial check
     await this.checkAndHarvest();
     await this.checkAndProcessBatches();
