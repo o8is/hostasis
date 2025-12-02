@@ -22,7 +22,7 @@ const config = {
   batchSize: parseInt(process.env.KEEPER_BATCH_SIZE || '20', 10),
   harvestGasEstimate: parseInt(process.env.KEEPER_HARVEST_GAS || '370000', 10),
   batchGasEstimate: parseInt(process.env.KEEPER_BATCH_GAS || '1135000', 10),
-  unwrapGasEstimate: parseInt(process.env.KEEPER_UNWRAP_GAS || '35000', 10),
+  unwrapGasEstimate: parseInt(process.env.KEEPER_UNWRAP_GAS || '60000', 10),
   minProfitMarginPercent: parseInt(process.env.KEEPER_MIN_PROFIT_MARGIN || '1', 10)
 };
 
