@@ -2,6 +2,7 @@ import { MantarayNode } from '@ethersphere/bee-js';
 import { Binary, Chunk } from 'cafe-utility';
 import { CID } from 'multiformats/cid';
 import * as digest from 'multiformats/hashes/digest';
+import type { LimitFunction } from 'p-limit';
 import type { FileEntry } from './types.js';
 
 /**
@@ -125,19 +126,23 @@ export async function buildMantarayManifest(
 
 /**
  * Recursively save a MantarayNode with client-side stamping
+ * @param node - MantarayNode to save
+ * @param uploadChunkFn - Function to upload a single chunk
+ * @param limit - Optional concurrency limiter for parallel uploads
  */
 export async function saveMantarayNodeRecursively(
   node: MantarayNode,
-  uploadChunkFn: (chunk: Chunk) => Promise<string>
+  uploadChunkFn: (chunk: Chunk) => Promise<string>,
+  limit?: LimitFunction
 ): Promise<string> {
   // Upload child nodes first (depth-first)
   for (const fork of node.forks.values()) {
-    await saveMantarayNodeRecursively(fork.node, uploadChunkFn);
+    await saveMantarayNodeRecursively(fork.node, uploadChunkFn, limit);
   }
 
   // Serialize and upload this node
   const nodeData = await node.marshal();
-  const nodeRootHash = await uploadWithMerkleTree(nodeData, uploadChunkFn);
+  const nodeRootHash = await uploadWithMerkleTree(nodeData, uploadChunkFn, limit);
   const nodeReference = Binary.uint8ArrayToHex(nodeRootHash);
 
   // Store the self-address for parent nodes to reference
@@ -149,10 +154,14 @@ export async function saveMantarayNodeRecursively(
 /**
  * Upload data using a Merkle tree structure
  * Returns the root hash of the tree
+ * @param data - Raw bytes to upload
+ * @param uploadChunkFn - Function to upload a single chunk
+ * @param limit - Optional concurrency limiter for parallel uploads
  */
 export async function uploadWithMerkleTree(
   data: Uint8Array,
-  uploadChunkFn: (chunk: Chunk) => Promise<string>
+  uploadChunkFn: (chunk: Chunk) => Promise<string>,
+  limit?: LimitFunction
 ): Promise<Uint8Array> {
   const { MerkleTree } = await import('cafe-utility');
 
@@ -165,8 +174,12 @@ export async function uploadWithMerkleTree(
   await tree.append(data);
   const rootChunk = await tree.finalize();
 
-  // Upload all chunks in parallel
-  await Promise.all(chunks.map(chunk => uploadChunkFn(chunk)));
+  // Upload all chunks with optional concurrency limiting
+  if (limit) {
+    await Promise.all(chunks.map(chunk => limit(() => uploadChunkFn(chunk))));
+  } else {
+    await Promise.all(chunks.map(chunk => uploadChunkFn(chunk)));
+  }
 
   return rootChunk.hash();
 }

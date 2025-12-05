@@ -1,6 +1,6 @@
-import { Stamper, MantarayNode } from '@ethersphere/bee-js';
+import { Stamper } from '@ethersphere/bee-js';
 import { Chunk, Binary, MerkleTree } from 'cafe-utility';
-import axios from 'axios';
+import pLimit, { LimitFunction } from 'p-limit';
 import type {
   StampedUploaderConfig,
   UploadOptions,
@@ -18,12 +18,23 @@ import {
 } from './utils.js';
 
 /**
+ * A chunk with its pre-computed stamp header, ready for network upload
+ * Separating stamping (CPU) from uploading (I/O) enables true parallelism
+ */
+interface StampedChunk {
+  chunkData: Uint8Array;
+  stampHeader: string;
+}
+
+/**
  * Main class for uploading files to Swarm with client-side stamping
+ * Uses native fetch for HTTP/2 multiplexing support
  */
 export class StampedUploader {
   private config: StampedUploaderConfig;
   private stamper: Stamper;
   private normalizedBatchId: string;
+  private limit: LimitFunction;
 
   constructor(config: StampedUploaderConfig) {
     this.config = config;
@@ -40,6 +51,12 @@ export class StampedUploader {
       this.normalizedBatchId,
       config.depth
     );
+
+    // Create concurrency limiter for parallel uploads
+    // With HTTP/2, browser handles multiplexing - use high limit or let browser manage
+    // Setting to Infinity lets the browser's native connection pooling take over
+    // Treat 0 or falsy as "unlimited" (Infinity)
+    this.limit = pLimit(config.concurrency || Infinity);
   }
 
   /**
@@ -72,38 +89,103 @@ export class StampedUploader {
 
         const chunkData = testChunk.build();
 
-        // Try to upload the test chunk
-        await axios.post(
-          `${this.config.gatewayUrl}/chunks`,
-          chunkData,
-          {
+        // Try to upload the test chunk with timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        try {
+          const response = await fetch(`${this.config.gatewayUrl}/chunks`, {
+            method: 'POST',
             headers: {
               'Content-Type': 'application/octet-stream',
               'swarm-postage-stamp': postageStampHeader
             },
-            timeout: 5000
+            body: chunkData,
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            // Stamp is recognized!
+            return;
           }
-        );
 
-        // If we get here, the stamp is recognized!
-        return;
+          // Handle non-OK response
+          const responseText = await response.text();
+          let responseData: any;
+          try {
+            responseData = JSON.parse(responseText);
+          } catch {
+            responseData = responseText;
+          }
+
+          const dataMessage = typeof responseData === 'string'
+            ? responseData
+            : responseData?.message || responseData?.error;
+          const errorMessage = (dataMessage || '').toLowerCase();
+          const statusCode = response.status;
+
+          // Consider it a stamp propagation issue if:
+          // - Error mentions batch, stamp, or bucket (common gateway errors during propagation)
+          // - Or it's a 400 Bad Request (gateway hasn't synced the stamp yet)
+          const isStampError = errorMessage.includes('batch') ||
+                              errorMessage.includes('stamp') ||
+                              errorMessage.includes('bucket') ||
+                              statusCode === 400;
+
+          if (isStampError && attempt < maxRetries - 1) {
+            // Stamp not propagated yet, wait and retry
+            if (onProgress) {
+              onProgress({
+                phase: 'stamping',
+                message: `Waiting for stamp to propagate (attempt ${attempt + 1}/${maxRetries})...`,
+                percentage: 5 + (attempt / maxRetries) * 10
+              });
+            }
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            continue;
+          }
+
+          // If we've exhausted retries, throw with details
+          if (attempt === maxRetries - 1) {
+            const detail = errorMessage || `status ${statusCode}`;
+            throw new Error(
+              `Stamp did not propagate to gateway after ${maxRetries} attempts (${maxRetries * retryDelayMs / 1000}s). Last error: ${detail}`
+            );
+          }
+
+          // For non-stamp errors, throw
+          throw new Error(`Gateway error: ${errorMessage || statusCode}`);
+        } catch (fetchErr: any) {
+          clearTimeout(timeoutId);
+
+          // Handle AbortController timeout or network errors
+          if (fetchErr.name === 'AbortError') {
+            // Timeout - treat as retryable
+            if (attempt < maxRetries - 1) {
+              if (onProgress) {
+                onProgress({
+                  phase: 'stamping',
+                  message: `Waiting for stamp to propagate (attempt ${attempt + 1}/${maxRetries})...`,
+                  percentage: 5 + (attempt / maxRetries) * 10
+                });
+              }
+              await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+              continue;
+            }
+          }
+
+          // Re-throw for handling below
+          throw fetchErr;
+        }
       } catch (err: any) {
-        // Extract error message from various possible locations
-        const responseData = err?.response?.data;
-        const dataMessage = typeof responseData === 'string'
-          ? responseData
-          : responseData?.message || responseData?.error;
-        const errorMessage = (dataMessage || err?.message || '').toLowerCase();
-        const statusCode = err?.response?.status;
+        const errorMessage = (err?.message || '').toLowerCase();
 
-        // Consider it a stamp propagation issue if:
-        // - Error mentions batch, stamp, or bucket (common gateway errors during propagation)
-        // - Or it's a 400 Bad Request (gateway hasn't synced the stamp yet)
-        // - Or it's a non-axios error containing bucket/stamp (from Stamper class)
+        // Check if it's a stamp-related error from the Stamper class
         const isStampError = errorMessage.includes('batch') ||
                             errorMessage.includes('stamp') ||
-                            errorMessage.includes('bucket') ||
-                            statusCode === 400;
+                            errorMessage.includes('bucket');
 
         if (isStampError && attempt < maxRetries - 1) {
           // Stamp not propagated yet, wait and retry
@@ -120,9 +202,8 @@ export class StampedUploader {
 
         // If we've exhausted retries, throw with details
         if (attempt === maxRetries - 1) {
-          const detail = errorMessage || `status ${statusCode}`;
           throw new Error(
-            `Stamp did not propagate to gateway after ${maxRetries} attempts (${maxRetries * retryDelayMs / 1000}s). Last error: ${detail}`
+            `Stamp did not propagate to gateway after ${maxRetries} attempts (${maxRetries * retryDelayMs / 1000}s). Last error: ${errorMessage || err.message}`
           );
         }
 
@@ -135,39 +216,65 @@ export class StampedUploader {
   }
 
   /**
-   * Upload a single chunk to the gateway with retry logic
-   * Uses 5 retries with exponential backoff (1s, 2s, 4s, 8s, 16s = 31s total)
+   * Stamp a chunk (CPU-bound operation)
+   * Call this for all chunks first, then upload the stamped chunks in parallel
    */
-  private async uploadChunk(chunk: Chunk, maxRetries = 5): Promise<string> {
+  private stampChunk(chunk: Chunk): StampedChunk {
     const envelope = this.stamper.stamp(chunk);
-
     const indexHex = Binary.uint8ArrayToHex(envelope.index);
     const timestampHex = Binary.uint8ArrayToHex(envelope.timestamp);
     const signatureHex = Binary.uint8ArrayToHex(envelope.signature);
-    const postageStampHeader = this.normalizedBatchId + indexHex + timestampHex + signatureHex;
+    const stampHeader = this.normalizedBatchId + indexHex + timestampHex + signatureHex;
 
-    const chunkData = chunk.build();
+    return {
+      chunkData: chunk.build(),
+      stampHeader
+    };
+  }
+
+  /**
+   * Upload a pre-stamped chunk (network I/O only, no CPU work)
+   * This enables true parallel uploads when called with Promise.all()
+   */
+  private async uploadStampedChunk(stamped: StampedChunk): Promise<string> {
+    const maxRetries = this.config.retryAttempts ?? 5;
+    const timeout = this.config.timeout ?? 30000;
 
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const uploadResponse = await axios.post(
-          `${this.config.gatewayUrl}/chunks`,
-          chunkData,
-          {
-            headers: {
-              'Content-Type': 'application/octet-stream',
-              'swarm-postage-stamp': postageStampHeader
-            }
-          }
-        );
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-        return uploadResponse.data.reference;
-      } catch (err: any) {
-        lastError = err;
-        const errorMessage = err?.response?.data?.message?.toLowerCase() || '';
-        const statusCode = err?.response?.status;
+      try {
+        const response = await fetch(`${this.config.gatewayUrl}/chunks`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'swarm-postage-stamp': stamped.stampHeader
+          },
+          body: stamped.chunkData,
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json() as { reference: string };
+          return data.reference;
+        }
+
+        // Handle non-OK response
+        const responseText = await response.text();
+        let errorMessage = '';
+        try {
+          const errorData = JSON.parse(responseText);
+          errorMessage = (errorData?.message || errorData?.error || '').toLowerCase();
+        } catch {
+          errorMessage = responseText.toLowerCase();
+        }
+
+        const statusCode = response.status;
 
         // Retry on bucket/stamp errors or 400s (transient gateway sync issues)
         const isRetryable = errorMessage.includes('bucket') ||
@@ -176,9 +283,29 @@ export class StampedUploader {
                            statusCode === 400;
 
         if (isRetryable && attempt < maxRetries - 1) {
-          // Exponential backoff: 1s, 2s, 4s
           await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
           continue;
+        }
+
+        throw new Error(`Chunk upload failed: ${errorMessage || `status ${statusCode}`}`);
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        lastError = err;
+
+        if (err.name === 'AbortError' && attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+          continue;
+        }
+
+        if (attempt < maxRetries - 1) {
+          const errorMessage = (err?.message || '').toLowerCase();
+          const isRetryable = errorMessage.includes('bucket') ||
+                             errorMessage.includes('batch') ||
+                             errorMessage.includes('stamp');
+          if (isRetryable) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+            continue;
+          }
         }
 
         throw err;
@@ -186,6 +313,16 @@ export class StampedUploader {
     }
 
     throw lastError || new Error('Upload failed after retries');
+  }
+
+  /**
+   * Upload a single chunk to the gateway with retry logic (stamps + uploads)
+   * Used for compatibility with existing code paths
+   * Native fetch enables HTTP/2 multiplexing for better performance
+   */
+  private async uploadChunk(chunk: Chunk): Promise<string> {
+    const stamped = this.stampChunk(chunk);
+    return this.uploadStampedChunk(stamped);
   }
 
   /**
@@ -201,72 +338,105 @@ export class StampedUploader {
       throw new Error('No files provided for upload');
     }
 
-    // Wait for the stamp to propagate to the gateway
+    const stampRetries = this.config.stampPropagationRetries ?? 40;
+    const stampDelay = this.config.stampPropagationDelayMs ?? 3000;
+    const progressInterval = this.config.progressUpdateInterval ?? 10;
+
+    // Start stamp propagation check in background (don't await yet)
+    // This allows file reading/chunking to happen in parallel
     onProgress({
       phase: 'stamping',
       message: 'Waiting for stamp to propagate to gateway...',
-      percentage: 10
+      percentage: 5
     });
 
-    await this.waitForStampPropagation(40, 3000, onProgress);
-
-    onProgress({
-      phase: 'stamping',
-      message: 'Stamp ready!',
-      percentage: 15
-    });
+    const stampReadyPromise = this.waitForStampPropagation(stampRetries, stampDelay, onProgress);
 
     // Track upload performance
     let uploadStartTime: number;
     let chunksUploaded = 0;
     const totalChunksToUpload: { count: number } = { count: 0 };
 
-    // Helper to upload a chunk with progress tracking
-    const uploadChunkTracked = async (chunk: Chunk): Promise<string> => {
-      if (!uploadStartTime) {
-        uploadStartTime = Date.now();
-      }
-
-      const result = await this.uploadChunk(chunk);
-
-      chunksUploaded++;
-      if (chunksUploaded % 50 === 0 || chunksUploaded === totalChunksToUpload.count) {
-        const elapsed = Date.now() - uploadStartTime;
-        const rate = chunksUploaded / (elapsed / 1000);
-        const percentage = 30 + (chunksUploaded / totalChunksToUpload.count) * 50;
-
-        onProgress({
-          phase: 'uploading',
-          message: `Uploading chunks (${chunksUploaded}/${totalChunksToUpload.count} at ${rate.toFixed(1)}/sec)...`,
-          percentage,
-          chunksProcessed: chunksUploaded,
-          totalChunks: totalChunksToUpload.count
-        });
-      }
-
-      return result;
-    };
-
     // Handle single file upload
     if (files.length === 1) {
       const file = files[0];
       const filePath = (file as any).webkitRelativePath || file.name;
 
+      // Read file while stamp propagates (parallel)
       onProgress({
-        phase: 'uploading',
-        message: 'Uploading file...',
-        percentage: 30
+        phase: 'chunking',
+        message: 'Reading file...',
+        percentage: 10
       });
 
       const fileData = new Uint8Array(await file.arrayBuffer());
-      const rootHash = await uploadWithMerkleTree(fileData, uploadChunkTracked);
-      const fileReference = Binary.uint8ArrayToHex(rootHash);
+
+      // Chunk the file
+      onProgress({
+        phase: 'chunking',
+        message: 'Chunking file...',
+        percentage: 15
+      });
+
+      const chunks: Chunk[] = [];
+      const tree = new MerkleTree(async (chunk: Chunk) => { chunks.push(chunk); });
+      await tree.append(fileData);
+      const rootChunk = await tree.finalize();
+      const fileReference = Binary.uint8ArrayToHex(rootChunk.hash());
+
+      totalChunksToUpload.count = chunks.length;
+
+      // Wait for stamp to be ready before stamping
+      await stampReadyPromise;
+
+      // Phase 1: Pre-stamp all chunks (CPU-bound, synchronous)
+      onProgress({
+        phase: 'stamping',
+        message: `Stamping ${chunks.length} chunks...`,
+        percentage: 20
+      });
+
+      const stampedChunks = chunks.map(chunk => this.stampChunk(chunk));
+
+      // Phase 2: Upload all pre-stamped chunks in parallel (network I/O only)
+      onProgress({
+        phase: 'uploading',
+        message: `Uploading ${chunks.length} chunks...`,
+        percentage: 30
+      });
+
+      uploadStartTime = Date.now();
+      const chunkUploads = stampedChunks.map(stamped =>
+        this.limit(async () => {
+          await this.uploadStampedChunk(stamped);
+          chunksUploaded++;
+          if (chunksUploaded % progressInterval === 0 || chunksUploaded === totalChunksToUpload.count) {
+            const elapsed = Date.now() - uploadStartTime;
+            const rate = chunksUploaded / (elapsed / 1000);
+            const remaining = totalChunksToUpload.count - chunksUploaded;
+            const eta = rate > 0 ? remaining / rate : 0;
+            const percentage = 30 + (chunksUploaded / totalChunksToUpload.count) * 40;
+
+            onProgress({
+              phase: 'uploading',
+              message: `Uploading chunks (${chunksUploaded}/${totalChunksToUpload.count} at ${rate.toFixed(1)}/sec)...`,
+              percentage,
+              chunksProcessed: chunksUploaded,
+              totalChunks: totalChunksToUpload.count,
+              rate,
+              eta
+            });
+          }
+        })
+      );
+
+      await Promise.all(chunkUploads);
 
       // Create a manifest for the single file
       onProgress({
         phase: 'uploading',
         message: 'Creating manifest...',
-        percentage: 70
+        percentage: 75
       });
 
       const fileEntries: FileEntry[] = [{
@@ -276,7 +446,8 @@ export class StampedUploader {
       }];
 
       const mantarayNode = await buildMantarayManifest(fileEntries);
-      const manifestReference = await saveMantarayNodeRecursively(mantarayNode, uploadChunkTracked);
+      // Manifest chunks are small, use the simple uploadChunk method
+      const manifestReference = await saveMantarayNodeRecursively(mantarayNode, (chunk) => this.uploadChunk(chunk), this.limit);
 
       onProgress({
         phase: 'complete',
@@ -286,11 +457,10 @@ export class StampedUploader {
 
       const cid = swarmHashToCid(manifestReference);
       const domain = this.config.gatewayUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-      const url = `https://${cid}.${domain}/${filePath}`;
 
       return {
         reference: manifestReference,
-        url,
+        url: `https://${cid}.${domain}/${filePath}`,
         cid
       };
     }
@@ -367,18 +537,53 @@ export class StampedUploader {
 
     const allFileChunks = await Promise.all(fileChunkPromises);
 
-    // Calculate total chunks for progress tracking
-    totalChunksToUpload.count = allFileChunks.reduce((sum, f) => sum + f.chunks.length, 0);
+    // Collect all chunks for pre-stamping
+    const allChunks = allFileChunks.flatMap(fileData => fileData.chunks);
+    totalChunksToUpload.count = allChunks.length;
 
-    // Upload all chunks in parallel
+    // Wait for stamp to be ready before stamping (may already be done if chunking took a while)
+    await stampReadyPromise;
+
+    // Phase 1: Pre-stamp all chunks (CPU-bound, synchronous)
+    // This separates CPU work from network I/O for true parallelism
+    onProgress({
+      phase: 'stamping',
+      message: `Stamping ${totalChunksToUpload.count} chunks...`,
+      percentage: 25
+    });
+
+    const stampedChunks = allChunks.map(chunk => this.stampChunk(chunk));
+
+    // Phase 2: Upload all pre-stamped chunks in parallel (network I/O only)
     onProgress({
       phase: 'uploading',
-      message: `Uploading ${totalChunksToUpload.count} chunks in parallel...`,
+      message: `Uploading ${totalChunksToUpload.count} chunks...`,
       percentage: 30
     });
 
-    const allChunkUploads = allFileChunks.flatMap(fileData =>
-      fileData.chunks.map(chunk => uploadChunkTracked(chunk))
+    uploadStartTime = Date.now();
+    const allChunkUploads = stampedChunks.map(stamped =>
+      this.limit(async () => {
+        await this.uploadStampedChunk(stamped);
+        chunksUploaded++;
+        if (chunksUploaded % progressInterval === 0 || chunksUploaded === totalChunksToUpload.count) {
+          const elapsed = Date.now() - uploadStartTime;
+          const rate = chunksUploaded / (elapsed / 1000);
+          const remaining = totalChunksToUpload.count - chunksUploaded;
+          const eta = rate > 0 ? remaining / rate : 0;
+          const percentage = 30 + (chunksUploaded / totalChunksToUpload.count) * 50;
+
+          onProgress({
+            phase: 'uploading',
+            message: `Uploading chunks (${chunksUploaded}/${totalChunksToUpload.count} at ${rate.toFixed(1)}/sec)...`,
+            percentage,
+            chunksProcessed: chunksUploaded,
+            totalChunks: totalChunksToUpload.count,
+            rate,
+            eta
+          });
+        }
+      })
     );
 
     await Promise.all(allChunkUploads);
@@ -440,7 +645,8 @@ export class StampedUploader {
       percentage: 85
     });
 
-    const manifestReference = await saveMantarayNodeRecursively(mantarayNode, uploadChunkTracked);
+    // Manifest chunks are small, use the simple uploadChunk method
+    const manifestReference = await saveMantarayNodeRecursively(mantarayNode, (chunk) => this.uploadChunk(chunk), this.limit);
 
     onProgress({
       phase: 'complete',
@@ -466,7 +672,36 @@ export class StampedUploader {
    * @returns Upload result with reference
    */
   async uploadData(data: Uint8Array): Promise<{ reference: string }> {
-    const rootHash = await uploadWithMerkleTree(data, (chunk) => this.uploadChunk(chunk));
+    const rootHash = await uploadWithMerkleTree(data, (chunk) => this.uploadChunk(chunk), this.limit);
+    const reference = Binary.uint8ArrayToHex(rootHash);
+
+    return { reference };
+  }
+
+  /**
+   * Upload a single pre-built Chunk object directly
+   * Useful for uploading manifest chunks or other pre-chunked data
+   * @param chunk - A Chunk object from cafe-utility
+   * @returns The chunk reference (hash)
+   */
+  async uploadSingleChunk(chunk: Chunk): Promise<string> {
+    return this.uploadChunk(chunk);
+  }
+
+  /**
+   * Create a chunk uploader function for use with saveMantarayNodeRecursively
+   * @returns A function that uploads chunks using this uploader's configuration
+   */
+  createChunkUploader(): (chunk: Chunk) => Promise<string> {
+    return (chunk: Chunk) => this.uploadChunk(chunk);
+  }
+
+  /**
+   * Alias for uploadData for backwards compatibility
+   * @deprecated Use uploadData instead
+   */
+  async uploadRawData(data: Uint8Array): Promise<{ reference: string }> {
+    const rootHash = await uploadWithMerkleTree(data, (chunk) => this.uploadChunk(chunk), this.limit);
     const reference = Binary.uint8ArrayToHex(rootHash);
 
     return { reference };

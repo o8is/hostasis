@@ -1,6 +1,6 @@
 {
   "name": "@hostasis/swarm-stamper",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Client-side stamping and upload for Swarm.",
   "type": "module",
   "main": "dist/index.js",
@@ -21,9 +21,9 @@
   "license": "MIT",
   "dependencies": {
     "@ethersphere/bee-js": "^10.1.1",
-    "axios": "^1.7.2",
     "cafe-utility": "^33.3.2",
-    "multiformats": "^13.4.1"
+    "multiformats": "^13.4.1",
+    "p-limit": "^6.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -630,7 +630,7 @@ const Upload: NextPage = () => {
                     {isProcessing ? (isUpdateMode ? 'Updating...' : 'Deploying...') : (isUpdateMode ? 'Update Project' : 'Deploy to Swarm')}
                   </button>
                   <button
-                    onClick={handleReset}
+                    onClick={() => handleReset()}
                     className={styles.secondaryButton}
                     disabled={isProcessing}
                   >
@@ -646,6 +646,25 @@ const Upload: NextPage = () => {
               <div className={styles.progressHeader}>
                 <h2>{isUpdateMode ? `Updating ${state.projectName}...` : `Deploying ${state.projectName}...`}</h2>
                 <p>{currentAction || uploadProgress.message}</p>
+
+                {/* Detailed upload progress */}
+                {uploadProgress.phase === 'uploading' && uploadProgress.totalChunks && (
+                  <div className={styles.uploadDetails}>
+                    <div className={styles.progressBarContainer}>
+                      <div
+                        className={styles.progressBarFill}
+                        style={{ width: `${(uploadProgress.chunksProcessed || 0) / uploadProgress.totalChunks * 100}%` }}
+                      />
+                    </div>
+                    <div className={styles.uploadStats}>
+                      <span>{uploadProgress.chunksProcessed || 0}/{uploadProgress.totalChunks} chunks</span>
+                      {uploadProgress.rate && <span>{uploadProgress.rate.toFixed(1)}/sec</span>}
+                      {uploadProgress.eta !== undefined && uploadProgress.eta > 0 && (
+                        <span>~{Math.ceil(uploadProgress.eta)}s left</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className={styles.progressSteps}>

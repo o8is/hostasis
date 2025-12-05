@@ -7,6 +7,10 @@ export interface UploadProgress {
   percentage?: number;
   chunksProcessed?: number;
   totalChunks?: number;
+  /** Upload rate in chunks per second */
+  rate?: number;
+  /** Estimated time remaining in seconds */
+  eta?: number;
 }
 
 /**
@@ -44,6 +48,21 @@ export interface StampedUploaderConfig {
   privateKey: string;
   /** Batch depth */
   depth: number;
+
+  // Performance tuning options
+
+  /** Maximum concurrent chunk uploads (default: Infinity - let browser manage via HTTP/2) */
+  concurrency?: number;
+  /** Request timeout in milliseconds (default: 30000) */
+  timeout?: number;
+  /** Max retry attempts per chunk (default: 5) */
+  retryAttempts?: number;
+  /** Max retries for stamp propagation check (default: 40) */
+  stampPropagationRetries?: number;
+  /** Delay between stamp propagation retries in ms (default: 3000) */
+  stampPropagationDelayMs?: number;
+  /** Update progress callback every N chunks (default: 10) */
+  progressUpdateInterval?: number;
 }
 
 /**

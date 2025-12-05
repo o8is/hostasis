@@ -479,6 +479,33 @@
   transition: width 0.5s ease;
 }
 
+.uploadDetails {
+  margin-top: 1.5rem;
+  text-align: left;
+}
+
+.uploadDetails .progressBarContainer {
+  margin-bottom: 0.75rem;
+}
+
+.progressBarFill {
+  background: linear-gradient(90deg, var(--o8-tertiary-dark), var(--o8-tertiary));
+  height: 100%;
+  border-radius: 20px;
+  transition: width 0.3s ease;
+}
+
+.uploadStats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: #8a8a8a;
+}
+
+.uploadStats span {
+  font-variant-numeric: tabular-nums;
+}
+
 .error {
   margin-top: 2rem;
   padding: 1rem;
