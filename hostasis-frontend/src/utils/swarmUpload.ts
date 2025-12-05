@@ -6,7 +6,7 @@ import axios from 'axios';
  * Upload one or more chunks to Swarm with client-side stamping
  * @param chunks - Array of Chunk objects (usually length 1 for single chunk)
  * @param batchId - Hex string of the postage batch
- * @param privateKey - Hex string of the batch owner's private key (reserve key, NOT passkey!)
+ * @param privateKey - Hex string of the batch owner's private key (vault key, NOT passkey!)
  * @param depth - Batch depth
  * @param gatewayUrl - Optional Swarm gateway URL
  * @returns Array of references (hashes) for uploaded chunks
@@ -14,7 +14,7 @@ import axios from 'axios';
 export async function uploadWithStamper(
   chunks: Chunk[],
   batchId: string,
-  privateKey: string, // Should be the batch owner (reserve key)
+  privateKey: string, // Should be the batch owner (vault key)
   depth: number,
   gatewayUrl?: string
 ): Promise<string[]> {

@@ -5,7 +5,6 @@ import { usePasskeyWallet } from './usePasskeyWallet';
 import { SWARM_GATEWAY_URL } from '../contracts/addresses';
 import { hasFeed as checkHasFeed, setFeedOwner, setCurrentVersion, getFeedOwner, setFeedManifestUrl, getFeedManifestUrl as getStoredManifestUrl, getCurrentFeedIndex, setCurrentFeedIndex } from '../utils/feedStorage';
 import { MantarayNode } from '@ethersphere/bee-js';
-import { uploadWithStamper } from '../utils/swarmUpload';
 import { hasPasskeyWallet } from '../utils/passkeyStorage';
 import {
   deriveProjectKey,
@@ -15,8 +14,9 @@ import {
   getAddressFromPrivateKey,
   swarmHashToCid,
   saveMantarayNodeRecursively,
+  StampedUploader,
 } from '@hostasis/swarm-stamper';
-import { deriveReserveKey } from '../utils/reserveKeys';
+import { deriveVaultKey } from '../utils/vaultKeys';
 import { getProject, updateProject } from '../utils/projectStorage';
 
 // Feed types
@@ -31,18 +31,18 @@ export interface FeedInfo {
 const NULL_TOPIC = new Uint8Array(32);
 
 /**
- * Derive feed private key from passkey private key and reserve index
- * feedPrivateKey = keccak256(passkeyPrivateKey || reserveIndex)
+ * Derive feed private key from passkey private key and vault index
+ * feedPrivateKey = keccak256(passkeyPrivateKey || vaultIndex)
  *
- * NOTE: This is the legacy derivation for single-project reserves.
- * For multi-project support, use deriveReserveKey + deriveProjectKey instead.
+ * NOTE: This is the legacy derivation for single-project vaults.
+ * For multi-project support, use deriveVaultKey + deriveProjectKey instead.
  */
-function deriveFeedPrivateKey(passkeyPrivateKey: string, reserveIndex: number): string {
+function deriveFeedPrivateKey(passkeyPrivateKey: string, vaultIndex: number): string {
   const hexKey = passkeyPrivateKey.startsWith('0x') ? passkeyPrivateKey as `0x${string}` : `0x${passkeyPrivateKey}` as `0x${string}`;
   const privateKeyBytes = pad(hexToBytes(hexKey), { size: 32 });
 
   const indexBytes = new Uint8Array(4);
-  new DataView(indexBytes.buffer).setUint32(0, reserveIndex, false);
+  new DataView(indexBytes.buffer).setUint32(0, vaultIndex, false);
 
   const combined = new Uint8Array(privateKeyBytes.length + 4);
   combined.set(privateKeyBytes, 0);
@@ -53,11 +53,11 @@ function deriveFeedPrivateKey(passkeyPrivateKey: string, reserveIndex: number): 
 }
 
 /**
- * Get feed URL for a reserve from stored owner address
+ * Get feed URL for a vault from stored owner address
  * Returns the /feeds/{owner}/{topic} URL (raw feed data)
  */
-function getFeedUrl(reserveIndex: number): string | null {
-  const ownerAddress = getFeedOwner(reserveIndex);
+function getFeedUrl(vaultIndex: number): string | null {
+  const ownerAddress = getFeedOwner(vaultIndex);
   if (!ownerAddress) return null;
   let ownerHex = ownerAddress.replace(/^0x/, '');
   if (ownerHex.length === 64) ownerHex = ownerHex.slice(0, 40);
@@ -69,8 +69,8 @@ function getFeedUrl(reserveIndex: number): string | null {
  * Fetch the current feed index from the Swarm gateway
  * Returns the latest index from the feed endpoint, or null if not found
  */
-async function fetchFeedIndex(reserveIndex: number): Promise<number | null> {
-  const feedUrl = getFeedUrl(reserveIndex);
+async function fetchFeedIndex(vaultIndex: number): Promise<number | null> {
+  const feedUrl = getFeedUrl(vaultIndex);
   if (!feedUrl) return null;
 
   try {
@@ -168,8 +168,8 @@ function addressBytesToHex(bytes: Uint8Array): string {
  * Hook for managing Swarm feeds with client-side SOC stamping
  *
  * SIMPLIFIED API:
- * - initializeFeed(reserveIndex, stampId, depth, contentHash?) - Initialize a new feed
- * - deployVersion(reserveIndex, stampId, depth, contentHash) - Deploy content to feed
+ * - initializeFeed(vaultIndex, stampId, depth, contentHash?) - Initialize a new feed
+ * - deployVersion(vaultIndex, stampId, depth, contentHash) - Deploy content to feed
  *
  * The hook gets passkey internally. Stamp depth should be fetched from useStampInfo.
  */
@@ -200,16 +200,16 @@ export function useFeedService() {
   }, [walletInfo, authenticatePasskeyWallet, createPasskeyWallet]);
 
   /**
-   * Get feed info for a reserve (derived from passkey + reserve index)
+   * Get feed info for a vault (derived from passkey + vault index)
    */
-  const getFeedInfo = useCallback(async (reserveIndex: number): Promise<FeedInfo | null> => {
+  const getFeedInfo = useCallback(async (vaultIndex: number): Promise<FeedInfo | null> => {
     try {
       const passkeyPrivateKey = await ensurePasskey();
       if (!passkeyPrivateKey) {
         throw new Error('Passkey authentication required');
       }
 
-      const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, reserveIndex);
+      const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, vaultIndex);
       const owner = getAddressFromPrivateKey(feedPrivateKeyHex);
       const identifier = makeFeedIdentifier(NULL_TOPIC, 0);
       const feedAddress = makeSOCAddress(identifier, owner);
@@ -227,15 +227,15 @@ export function useFeedService() {
   }, [ensurePasskey]);
 
   /**
-   * Initialize a new feed for a reserve
-   * @param reserveIndex - The reserve index to create feed for
+   * Initialize a new feed for a vault
+   * @param vaultIndex - The vault index to create feed for
    * @param stampId - The postage stamp batch ID
    * @param depth - The stamp depth (from useStampInfo)
    * @param contentHash - Optional initial content hash (defaults to zeros)
    * @returns Feed manifest URL
    */
   const initializeFeed = useCallback(async (
-    reserveIndex: number,
+    vaultIndex: number,
     stampId: string,
     depth: number,
     contentHash?: string
@@ -252,7 +252,7 @@ export function useFeedService() {
       console.log('[FeedService] Using stamp depth:', depth);
 
       // Derive feed private key (legacy single-project mode)
-      const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, reserveIndex);
+      const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, vaultIndex);
       const owner = getAddressFromPrivateKey(feedPrivateKeyHex);
 
       const initialRef = contentHash || '0'.repeat(64);
@@ -260,7 +260,7 @@ export function useFeedService() {
       // Write initial feed update at index 0 using swarm-stamper
       // In legacy mode, the feed key is also the stamp key
       await stamperWriteFeedUpdate({
-        reservePrivateKey: feedPrivateKeyHex,
+        vaultPrivateKey: feedPrivateKeyHex,
         contentReference: initialRef,
         feedIndex: 0,
         batchId: stampId,
@@ -269,25 +269,27 @@ export function useFeedService() {
       });
 
       const ownerHex = addressBytesToHex(owner);
-      setFeedOwner(reserveIndex, ownerHex);
-      setCurrentFeedIndex(reserveIndex, 0);
+      setFeedOwner(vaultIndex, ownerHex);
+      setCurrentFeedIndex(vaultIndex, 0);
       if (contentHash) {
-        setCurrentVersion(reserveIndex, contentHash);
+        setCurrentVersion(vaultIndex, contentHash);
       }
 
       console.log('[FeedService] Feed initialized for owner:', ownerHex);
 
-      // Create and upload feed manifest
-      const uploadChunk = async (chunk: any) => {
-        const results = await uploadWithStamper([chunk], stampId, feedPrivateKeyHex, depth);
-        return results[0];
-      };
+      // Create uploader for manifest chunks
+      const uploader = new StampedUploader({
+        gatewayUrl: SWARM_GATEWAY_URL,
+        batchId: stampId,
+        privateKey: feedPrivateKeyHex,
+        depth,
+      });
 
       const topicHex = '0'.repeat(64);
-      const manifestReference = await createFeedManifest(ownerHex, topicHex, uploadChunk);
+      const manifestReference = await createFeedManifest(ownerHex, topicHex, uploader.createChunkUploader());
       const manifestUrl = manifestReferenceToUrl(manifestReference);
 
-      setFeedManifestUrl(reserveIndex, manifestUrl, manifestReference);
+      setFeedManifestUrl(vaultIndex, manifestUrl, manifestReference);
       console.log('[FeedService] Feed manifest URL:', manifestUrl);
       console.log('[FeedService] Feed manifest reference:', manifestReference);
       return manifestUrl;
@@ -301,14 +303,14 @@ export function useFeedService() {
   }, [ensurePasskey]);
 
   /**
-   * Deploy a new version to a reserve's feed
-   * @param reserveIndex - The reserve index
+   * Deploy a new version to a vault's feed
+   * @param vaultIndex - The vault index
    * @param stampId - The postage stamp batch ID
    * @param depth - The stamp depth (from useStampInfo)
    * @param contentHash - The content hash to deploy
    */
   const deployVersion = useCallback(async (
-    reserveIndex: number,
+    vaultIndex: number,
     stampId: string,
     depth: number,
     contentHash: string
@@ -324,16 +326,16 @@ export function useFeedService() {
 
       console.log('[FeedService] Using stamp depth:', depth);
 
-      const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, reserveIndex);
+      const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, vaultIndex);
 
-      const currentIndex = getCurrentFeedIndex(reserveIndex);
+      const currentIndex = getCurrentFeedIndex(vaultIndex);
       const feedIndex = currentIndex + 1;
 
       console.log('[FeedService] Current index:', currentIndex, '→ Deploying to index:', feedIndex);
 
       // In legacy mode, the feed key is also the stamp key
       await stamperWriteFeedUpdate({
-        reservePrivateKey: feedPrivateKeyHex,
+        vaultPrivateKey: feedPrivateKeyHex,
         contentReference: contentHash,
         feedIndex,
         batchId: stampId,
@@ -341,8 +343,8 @@ export function useFeedService() {
         gatewayUrl: SWARM_GATEWAY_URL,
       });
 
-      setCurrentVersion(reserveIndex, contentHash);
-      setCurrentFeedIndex(reserveIndex, feedIndex);
+      setCurrentVersion(vaultIndex, contentHash);
+      setCurrentFeedIndex(vaultIndex, feedIndex);
 
       console.log('[FeedService] Version deployed at index:', feedIndex);
     } catch (err) {
@@ -355,24 +357,24 @@ export function useFeedService() {
   }, [ensurePasskey]);
 
   /**
-   * Check if a feed exists for a reserve
+   * Check if a feed exists for a vault
    */
-  const hasFeed = useCallback((reserveIndex: number): boolean => {
-    return checkHasFeed(reserveIndex);
+  const hasFeed = useCallback((vaultIndex: number): boolean => {
+    return checkHasFeed(vaultIndex);
   }, []);
 
   /**
-   * Export feed key for a reserve (for CI/CD or external use)
-   * @param reserveIndex - The reserve index
+   * Export feed key for a vault (for CI/CD or external use)
+   * @param vaultIndex - The vault index
    * @returns Object with privateKey and address
    */
-  const exportFeedKey = useCallback(async (reserveIndex: number): Promise<{ privateKey: string; address: string }> => {
+  const exportFeedKey = useCallback(async (vaultIndex: number): Promise<{ privateKey: string; address: string }> => {
     const passkeyPrivateKey = await ensurePasskey();
     if (!passkeyPrivateKey) {
       throw new Error('Passkey authentication required');
     }
 
-    const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, reserveIndex);
+    const feedPrivateKeyHex = deriveFeedPrivateKey(passkeyPrivateKey, vaultIndex);
     const owner = getAddressFromPrivateKey(feedPrivateKeyHex);
 
     return {
@@ -382,17 +384,17 @@ export function useFeedService() {
   }, [ensurePasskey]);
 
   /**
-   * Get the feed manifest URL for a reserve
+   * Get the feed manifest URL for a vault
    */
-  const getFeedManifestUrl = useCallback((reserveIndex: number): string | null => {
-    return getStoredManifestUrl(reserveIndex);
+  const getFeedManifestUrl = useCallback((vaultIndex: number): string | null => {
+    return getStoredManifestUrl(vaultIndex);
   }, []);
 
   /**
    * Fetch the current feed index from Swarm gateway
    */
-  const fetchCurrentFeedIndex = useCallback(async (reserveIndex: number): Promise<number | null> => {
-    return fetchFeedIndex(reserveIndex);
+  const fetchCurrentFeedIndex = useCallback(async (vaultIndex: number): Promise<number | null> => {
+    return fetchFeedIndex(vaultIndex);
   }, []);
 
   /**
@@ -407,10 +409,10 @@ export function useFeedService() {
   // ============================================
 
   /**
-   * Initialize a feed for a specific project within a reserve
-   * Uses project key derivation: projectKey = keccak256(reserveKey || projectSlug)
+   * Initialize a feed for a specific project within a vault
+   * Uses project key derivation: projectKey = keccak256(vaultKey || projectSlug)
    *
-   * @param reserveIndex - The reserve index
+   * @param vaultIndex - The vault index
    * @param projectSlug - The project slug (normalized name)
    * @param stampId - The postage stamp batch ID
    * @param depth - The stamp depth
@@ -418,7 +420,7 @@ export function useFeedService() {
    * @returns Feed manifest URL
    */
   const initializeProjectFeed = useCallback(async (
-    reserveIndex: number,
+    vaultIndex: number,
     projectSlug: string,
     stampId: string,
     depth: number,
@@ -438,16 +440,16 @@ export function useFeedService() {
         ? passkeyPrivateKey as `0x${string}`
         : `0x${passkeyPrivateKey}` as `0x${string}`;
 
-      // Derive reserve key, then project key
-      const reserveKey = deriveReserveKey(passkeyHex, reserveIndex);
-      const projectKey = deriveProjectKey(reserveKey.privateKey, projectSlug);
+      // Derive vault key, then project key
+      const vaultKey = deriveVaultKey(passkeyHex, vaultIndex);
+      const projectKey = deriveProjectKey(vaultKey.privateKey, projectSlug);
 
       const initialRef = contentHash || '0'.repeat(64);
 
       // Write initial feed update at index 0
-      // Project key signs the SOC, reserve key stamps the chunks
+      // Project key signs the SOC, vault key stamps the chunks
       await stamperWriteFeedUpdate({
-        reservePrivateKey: reserveKey.privateKey,
+        vaultPrivateKey: vaultKey.privateKey,
         signerPrivateKey: projectKey.privateKey,
         contentReference: initialRef,
         feedIndex: 0,
@@ -459,18 +461,20 @@ export function useFeedService() {
       const ownerHex = projectKey.address.replace(/^0x/, '');
       console.log('[FeedService] Project feed initialized for:', projectSlug, 'owner:', ownerHex);
 
-      // Create and upload feed manifest
-      const uploadChunk = async (chunk: any) => {
-        const results = await uploadWithStamper([chunk], stampId, reserveKey.privateKey, depth);
-        return results[0];
-      };
+      // Create uploader for manifest chunks
+      const uploader = new StampedUploader({
+        gatewayUrl: SWARM_GATEWAY_URL,
+        batchId: stampId,
+        privateKey: vaultKey.privateKey,
+        depth,
+      });
 
       const topicHex = '0'.repeat(64);
-      const manifestReference = await createFeedManifest(ownerHex, topicHex, uploadChunk);
+      const manifestReference = await createFeedManifest(ownerHex, topicHex, uploader.createChunkUploader());
       const manifestUrl = manifestReferenceToUrl(manifestReference);
 
       // Update project data with manifest URL and reference
-      updateProject(reserveIndex, projectSlug, {
+      updateProject(vaultIndex, projectSlug, {
         manifestUrl,
         manifestReference,
         feedOwnerAddress: ownerHex,
@@ -493,14 +497,14 @@ export function useFeedService() {
   /**
    * Deploy a new version to a project's feed
    *
-   * @param reserveIndex - The reserve index
+   * @param vaultIndex - The vault index
    * @param projectSlug - The project slug
    * @param stampId - The postage stamp batch ID
    * @param depth - The stamp depth
    * @param contentHash - The content hash to deploy
    */
   const deployToProject = useCallback(async (
-    reserveIndex: number,
+    vaultIndex: number,
     projectSlug: string,
     stampId: string,
     depth: number,
@@ -516,9 +520,9 @@ export function useFeedService() {
       }
 
       // Get project data
-      const project = getProject(reserveIndex, projectSlug);
+      const project = getProject(vaultIndex, projectSlug);
       if (!project) {
-        throw new Error(`Project "${projectSlug}" not found in reserve ${reserveIndex}`);
+        throw new Error(`Project "${projectSlug}" not found in vault ${vaultIndex}`);
       }
 
       // Normalize passkey to 0x format
@@ -527,17 +531,17 @@ export function useFeedService() {
         : `0x${passkeyPrivateKey}` as `0x${string}`;
 
       // Derive keys
-      const reserveKey = deriveReserveKey(passkeyHex, reserveIndex);
-      const projectKey = deriveProjectKey(reserveKey.privateKey, projectSlug);
+      const vaultKey = deriveVaultKey(passkeyHex, vaultIndex);
+      const projectKey = deriveProjectKey(vaultKey.privateKey, projectSlug);
 
       // Increment feed index
       const nextIndex = project.currentIndex + 1;
 
       console.log('[FeedService] Deploying to project:', projectSlug, 'index:', nextIndex);
 
-      // Write feed update - reserve key stamps, project key signs
+      // Write feed update - vault key stamps, project key signs
       await stamperWriteFeedUpdate({
-        reservePrivateKey: reserveKey.privateKey,
+        vaultPrivateKey: vaultKey.privateKey,
         signerPrivateKey: projectKey.privateKey,
         contentReference: contentHash,
         feedIndex: nextIndex,
@@ -547,7 +551,7 @@ export function useFeedService() {
       });
 
       // Update project data
-      updateProject(reserveIndex, projectSlug, {
+      updateProject(vaultIndex, projectSlug, {
         currentVersion: contentHash,
         currentIndex: nextIndex,
       });
@@ -565,12 +569,12 @@ export function useFeedService() {
   /**
    * Export project key for CLI/CD use
    *
-   * @param reserveIndex - The reserve index
+   * @param vaultIndex - The vault index
    * @param projectSlug - The project slug
    * @returns Object with privateKey and address
    */
   const exportProjectKey = useCallback(async (
-    reserveIndex: number,
+    vaultIndex: number,
     projectSlug: string
   ): Promise<{ privateKey: string; address: string }> => {
     const passkeyPrivateKey = await ensurePasskey();
@@ -583,8 +587,8 @@ export function useFeedService() {
       ? passkeyPrivateKey as `0x${string}`
       : `0x${passkeyPrivateKey}` as `0x${string}`;
 
-    const reserveKey = deriveReserveKey(passkeyHex, reserveIndex);
-    const projectKey = deriveProjectKey(reserveKey.privateKey, projectSlug);
+    const vaultKey = deriveVaultKey(passkeyHex, vaultIndex);
+    const projectKey = deriveProjectKey(vaultKey.privateKey, projectSlug);
 
     return {
       privateKey: projectKey.privateKey,
@@ -595,15 +599,15 @@ export function useFeedService() {
   /**
    * Get project manifest URL
    */
-  const getProjectManifestUrl = useCallback((reserveIndex: number, projectSlug: string): string | null => {
-    const project = getProject(reserveIndex, projectSlug);
+  const getProjectManifestUrl = useCallback((vaultIndex: number, projectSlug: string): string | null => {
+    const project = getProject(vaultIndex, projectSlug);
     return project?.manifestUrl || null;
   }, []);
 
   return {
     isLoading,
     error,
-    // Legacy reserve-based functions
+    // Legacy vault-based functions
     getFeedInfo,
     initializeFeed,
     deployVersion,

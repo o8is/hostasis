@@ -77,9 +77,9 @@ export default function WithdrawModal({
   const isLoading = isPending || isConfirming;
 
   return (
-    <Modal title={`Cancel Reserve #${depositIndex}`} onClose={onClose}>
+    <Modal title={`Cancel Vault #${depositIndex}`} onClose={onClose}>
       <div className="modal-warning">
-        <p>Warning: Withdrawing will remove funds from this reserve.</p>
+        <p>Warning: Withdrawing will remove funds from this vault.</p>
       </div>
 
       <p className="description">
@@ -119,7 +119,7 @@ export default function WithdrawModal({
 
       <div className="button-group">
         <button className="view-button" onClick={onClose} disabled={isLoading} style={{ flex: 1, opacity: 0.7 }}>
-          Keep Reserve
+          Keep Vault
         </button>
         <button
           className="view-button view-button--danger"

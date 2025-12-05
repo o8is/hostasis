@@ -35,7 +35,7 @@ export const FileList: React.FC<FileListProps> = ({ upload }) => {
       <div className={styles.empty}>
         <p className={styles.textMuted}>No uploads yet</p>
         <p className={`${styles.textSmall} ${styles.textMuted}`}>
-          Upload files to this reserve to start using decentralized storage
+          Upload files to this vault to start using decentralized storage
         </p>
       </div>
     )

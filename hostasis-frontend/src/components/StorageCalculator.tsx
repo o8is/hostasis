@@ -29,7 +29,7 @@ const StorageCalculator: React.FC = () => {
       <div className="calculator-header">
         <h2>Permanent Storage Calculator</h2>
         <p className="calculator-subtitle">
-          See how much you need to reserve for permanent hosting
+          See how much you need to deposit for permanent hosting
         </p>
       </div>
 
@@ -84,7 +84,7 @@ const StorageCalculator: React.FC = () => {
               </div>
               <div className="cost-breakdown-item">
                 <span className="cost-label">
-                  Reserve Deposit
+                  Vault Deposit
                   <span className="recoverable-badge">100% Recoverable</span>
                 </span>
                 <span className="cost-dots"></span>
@@ -104,7 +104,7 @@ const StorageCalculator: React.FC = () => {
 
             <div className="reserve-info-callout">
               <div className="reserve-info-text">
-                <strong>Your reserve is fully yours.</strong> Withdraw 100% anytime. The only cost is foregone yield while your storage is active.
+                <strong>Your deposit is fully yours.</strong> Withdraw 100% anytime. The only cost is foregone yield while your storage is active.
               </div>
             </div>
 

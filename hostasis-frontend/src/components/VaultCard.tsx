@@ -1,26 +1,26 @@
 /**
- * ReserveCard - Simple display card for showing reserve info
- * Used in update mode to show which reserve is being used
+ * VaultCard - Simple display card for showing vault info
+ * Used in update mode to show which vault is being used
  */
 
-import { RESERVE_TIERS, type ReserveTier } from '../utils/projectStorage';
+import { VAULT_TIERS, type VaultTier } from '../utils/projectStorage';
 import { CopyButton } from './CopyButton';
-import styles from './ReserveCard.module.css';
+import styles from './VaultCard.module.css';
 
-interface ReserveCardProps {
-  reserveIndex: number;
-  tier: ReserveTier;
+interface VaultCardProps {
+  vaultIndex: number;
+  tier: VaultTier;
   createdAt?: number;
   batchId: string;
 }
 
-export default function ReserveCard({
-  reserveIndex,
+export default function VaultCard({
+  vaultIndex,
   tier,
   createdAt,
   batchId,
-}: ReserveCardProps) {
-  const tierInfo = RESERVE_TIERS[tier];
+}: VaultCardProps) {
+  const tierInfo = VAULT_TIERS[tier];
 
   // Format date if provided
   const dateStr = createdAt
@@ -37,7 +37,7 @@ export default function ReserveCard({
       <div className={styles.header}>
         <div className={styles.titleRow}>
           <span className={styles.title}>
-            Reserve #{reserveIndex}
+            Vault #{vaultIndex}
             <span className={styles.tierBadge}>{tierInfo.name}</span>
           </span>
           {dateStr && <span className={styles.date}>{dateStr}</span>}

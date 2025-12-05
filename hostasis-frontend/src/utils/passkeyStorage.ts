@@ -50,6 +50,18 @@ export function storeCredentialId(credentialId: string): void {
 }
 
 /**
+ * Retrieve the credential ID for the passkey
+ */
+export function retrieveCredentialId(): string | null {
+  try {
+    return localStorage.getItem(CREDENTIAL_ID_STORAGE_KEY);
+  } catch (error) {
+    console.error('Failed to retrieve credential ID:', error);
+    return null;
+  }
+}
+
+/**
  * Check if a passkey wallet has been configured
  */
 export function hasPasskeyWallet(): boolean {

@@ -22,8 +22,8 @@ const NATIVE_XDAI = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE' as const;
 // Priority fee for Gnosis Chain transactions (2 Gwei minimum for reliable inclusion)
 const GNOSIS_PRIORITY_FEE = 2000000000n; // 2 Gwei
 
-interface CreateBatchWithReserveWalletParams {
-  reservePrivateKey: Hex;
+interface CreateBatchWithVaultWalletParams {
+  vaultPrivateKey: Hex;
   totalXDAI: string; // Total xDAI to send (for gas + swap)
   initialBalancePerChunk: bigint;
   depth: number;
@@ -31,8 +31,8 @@ interface CreateBatchWithReserveWalletParams {
   immutable?: boolean;
 }
 
-interface UseReserveWalletBatchCreationReturn {
-  createBatchWithReserveWallet: (params: CreateBatchWithReserveWalletParams) => Promise<{ hash: Hex; batchId: Hex; reserveAddress: Hex }>;
+interface UseVaultBatchCreationReturn {
+  createBatchWithVaultWallet: (params: CreateBatchWithVaultWalletParams) => Promise<{ hash: Hex; batchId: Hex; vaultAddress: Hex }>;
   isCreating: boolean;
   error: Error | null;
   currentStep: string;
@@ -43,31 +43,31 @@ export function calculateTotalBZZ(balancePerChunk: bigint, depth: number): bigin
 }
 
 /**
- * Hook for creating postage stamp batches using a reserve wallet
+ * Hook for creating postage stamp batches using a vault wallet
  *
- * This creates batches where the reserve wallet (derived key) is the owner.
+ * This creates batches where the vault wallet (derived key) is the owner.
  * The flow is:
- * 1. Transfer xDAI from user wallet → reserve wallet
- * 2. Reserve wallet swaps xDAI → BZZ (via SushiSwap)
- * 3. Reserve wallet approves BZZ for PostageStamp contract
- * 4. Reserve wallet creates batch (as owner)
+ * 1. Transfer xDAI from user wallet → vault wallet
+ * 2. Vault wallet swaps xDAI → BZZ (via SushiSwap)
+ * 3. Vault wallet approves BZZ for PostageStamp contract
+ * 4. Vault wallet creates batch (as owner)
  */
-export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationReturn {
+export function useVaultBatchCreation(): UseVaultBatchCreationReturn {
   const publicClient = usePublicClient();
   const { data: userWalletClient } = useWalletClient();
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [currentStep, setCurrentStep] = useState('');
 
-  const createBatchWithReserveWallet = useCallback(async (
-    params: CreateBatchWithReserveWalletParams
-  ): Promise<{ hash: Hex; batchId: Hex; reserveAddress: Hex }> => {
+  const createBatchWithVaultWallet = useCallback(async (
+    params: CreateBatchWithVaultWalletParams
+  ): Promise<{ hash: Hex; batchId: Hex; vaultAddress: Hex }> => {
     setIsCreating(true);
     setError(null);
 
     try {
       const {
-        reservePrivateKey,
+        vaultPrivateKey,
         totalXDAI,
         initialBalancePerChunk,
         depth,
@@ -106,20 +106,20 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
         effective: effectiveBalancePerChunk.toString(),
       });
 
-      // Create reserve wallet client from private key
-      const reserveAccount = privateKeyToAccount(reservePrivateKey);
-      const reserveWalletClient = createWalletClient({
-        account: reserveAccount,
+      // Create vault wallet client from private key
+      const vaultAccount = privateKeyToAccount(vaultPrivateKey);
+      const vaultWalletClient = createWalletClient({
+        account: vaultAccount,
         chain: gnosis,
         transport: http()
       });
 
       const totalXDAIWei = parseEther(totalXDAI);
 
-      // Step 1: Transfer xDAI from user wallet to reserve wallet
-      setCurrentStep('Transferring xDAI to reserve wallet...');
+      // Step 1: Transfer xDAI from user wallet to vault wallet
+      setCurrentStep('Transferring xDAI to vault wallet...');
       const transferHash = await userWalletClient.sendTransaction({
-        to: reserveAccount.address,
+        to: vaultAccount.address,
         value: totalXDAIWei,
         maxPriorityFeePerGas: GNOSIS_PRIORITY_FEE
       });
@@ -130,7 +130,8 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
       setCurrentStep('Getting swap quote...');
 
       // Calculate how much xDAI to swap (leave some for gas)
-      const gasReserve = parseEther('0.01'); // Reserve 0.01 xDAI for gas
+      // Need enough for: swap tx + approve tx + createBatch tx
+      const gasReserve = parseEther('0.02'); // Reserve 0.02 xDAI for gas
       const swapAmount = totalXDAIWei - gasReserve;
 
       const apiUrl = new URL(`https://api.sushi.com/swap/v7/${GNOSIS_CHAIN_ID}`);
@@ -139,8 +140,8 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
         tokenOut: BZZ_ADDRESS,
         amount: swapAmount.toString(),
         maxSlippage: '0.01', // 1% slippage
-        sender: reserveAccount.address,
-        recipient: reserveAccount.address,
+        sender: vaultAccount.address,
+        recipient: vaultAccount.address,
       };
 
       Object.entries(swapParams).forEach(([key, value]) => apiUrl.searchParams.set(key, value));
@@ -152,9 +153,9 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
         throw new Error(`Failed to get swap quote: ${swapData.status}`);
       }
 
-      // Step 3: Execute swap from reserve wallet
+      // Step 3: Execute swap from vault wallet
       setCurrentStep('Swapping xDAI for BZZ...');
-      const swapHash = await reserveWalletClient.sendTransaction({
+      const swapHash = await vaultWalletClient.sendTransaction({
         to: swapData.tx.to as Hex,
         data: swapData.tx.data as Hex,
         value: swapAmount,
@@ -165,7 +166,7 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
 
       // Step 4: Approve BZZ tokens for PostageStamp contract
       setCurrentStep('Approving BZZ for batch creation...');
-      const approveHash = await reserveWalletClient.writeContract({
+      const approveHash = await vaultWalletClient.writeContract({
         address: BZZ_ADDRESS,
         abi: erc20Abi,
         functionName: 'approve',
@@ -179,17 +180,17 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
       const nonce = keccak256(
         encodePacked(
           ['address', 'uint256', 'uint256'],
-          [reserveAccount.address, BigInt(Date.now()), BigInt(Math.floor(Math.random() * 1000000))]
+          [vaultAccount.address, BigInt(Date.now()), BigInt(Math.floor(Math.random() * 1000000))]
         )
       );
 
-      // Step 6: Create batch with reserve wallet as owner
+      // Step 6: Create batch with vault wallet as owner
       setCurrentStep('Creating postage batch...');
-      const hash = await reserveWalletClient.writeContract({
+      const hash = await vaultWalletClient.writeContract({
         address: POSTAGE_STAMP_ADDRESS,
         abi: PostageStampABI,
         functionName: 'createBatch',
-        args: [reserveAccount.address, effectiveBalancePerChunk, depth, bucketDepth, nonce, immutable],
+        args: [vaultAccount.address, effectiveBalancePerChunk, depth, bucketDepth, nonce, immutable],
         maxPriorityFeePerGas: GNOSIS_PRIORITY_FEE
       });
 
@@ -217,7 +218,7 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
       const batchId = batchCreatedEvent.topics[1] as Hex;
 
       setCurrentStep('Complete!');
-      return { hash, batchId, reserveAddress: reserveAccount.address };
+      return { hash, batchId, vaultAddress: vaultAccount.address };
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Batch creation failed');
       setError(error);
@@ -229,7 +230,7 @@ export function useReserveWalletBatchCreation(): UseReserveWalletBatchCreationRe
   }, [publicClient, userWalletClient]);
 
   return {
-    createBatchWithReserveWallet,
+    createBatchWithVaultWallet,
     isCreating,
     error,
     currentStep

@@ -1,9 +1,9 @@
 import { EFFECTIVE_CAPACITY_BYTES } from '../hooks/useCreatePostageBatch';
-import { RESERVE_TIERS } from './projectStorage';
+import { VAULT_TIERS } from './projectStorage';
 
 // Map depth to tier name
 const DEPTH_TO_TIER_NAME: Record<number, string> = Object.fromEntries(
-  Object.values(RESERVE_TIERS).map(tier => [tier.depth, tier.name])
+  Object.values(VAULT_TIERS).map(tier => [tier.depth, tier.name])
 );
 
 /**

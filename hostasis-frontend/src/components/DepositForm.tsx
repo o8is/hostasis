@@ -15,11 +15,11 @@ import { ensureBatchIdPrefix } from '../utils/batchId';
 
 interface DepositFormProps {
   onDepositSuccess?: () => void;
-  /** Called with the new reserve index after successful deposit */
-  onDepositSuccessWithIndex?: (reserveIndex: number, stampId: string) => void;
+  /** Called with the new vault index after successful deposit */
+  onDepositSuccessWithIndex?: (vaultIndex: number, stampId: string) => void;
   initialAmount?: string;
   initialStampId?: string;
-  /** Content hash (Swarm reference) to associate with the new reserve */
+  /** Content hash (Swarm reference) to associate with the new vault */
   initialContentHash?: string;
   onCancel?: () => void;
   isModal?: boolean;
@@ -118,14 +118,14 @@ export default function DepositForm({
       // Capture stampId before clearing
       const currentStampId = stampId;
 
-      // Refetch deposit count to get the new reserve index
+      // Refetch deposit count to get the new vault index
       refetchDepositCount().then((result) => {
         const newCount = result.data as bigint | undefined;
         if (newCount !== undefined && onDepositSuccessWithIndex && currentStampId) {
-          // New reserve index is count - 1 (0-indexed)
-          const newReserveIndex = Number(newCount) - 1;
+          // New vault index is count - 1 (0-indexed)
+          const newVaultIndex = Number(newCount) - 1;
           const normalizedStampId = ensureBatchIdPrefix(currentStampId);
-          onDepositSuccessWithIndex(newReserveIndex, normalizedStampId);
+          onDepositSuccessWithIndex(newVaultIndex, normalizedStampId);
         }
       });
 
@@ -182,7 +182,7 @@ export default function DepositForm({
       const token = conversion.currentToken;
 
       if (!token) {
-        setError('You need xDAI, wxDAI, or sDAI to create a reserve');
+        setError('You need xDAI, wxDAI, or sDAI to create a vault');
         return;
       }
 
@@ -192,16 +192,16 @@ export default function DepositForm({
       }
 
       if (token === 'SDAI') {
-        setDepositStep('Creating reserve...');
+        setDepositStep('Creating vault...');
         await depositWithPermit(amountBigInt, normalizedId as Hex);
       } else {
         await conversion.convertToSDAI(amountBigInt, token, async (sdaiAmount) => {
-          setDepositStep('Creating reserve...');
+          setDepositStep('Creating vault...');
           await depositWithPermit(sdaiAmount, normalizedId as Hex);
         });
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to create reserve';
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create vault';
       setError(errorMessage);
       setDepositStep('');
     }
@@ -221,7 +221,7 @@ export default function DepositForm({
 
   const formContent = (
     <>
-      {!isModal && <h3 style={{ marginTop: 0 }}>Create Reserve</h3>}
+      {!isModal && <h3 style={{ marginTop: 0 }}>Create Vault</h3>}
 
       <p className="description">
         Available: <TokenAmount value={balance} symbol={tokenLabel} />
@@ -289,10 +289,10 @@ export default function DepositForm({
 
       {error && <p className="error-message">{error}</p>}
 
-      {isDeposited && <p className="success-message">Reserve created successfully!</p>}
+      {isDeposited && <p className="success-message">Vault created successfully!</p>}
 
       {!conversion.currentToken && (
-        <p className="error-message">You need xDAI, wxDAI, or sDAI to create a reserve</p>
+        <p className="error-message">You need xDAI, wxDAI, or sDAI to create a vault</p>
       )}
 
       <div className="button-group">
@@ -307,7 +307,7 @@ export default function DepositForm({
           disabled={!isValidAmount || !isValidStampId || isLoading || !conversion.currentToken}
           style={{ flex: 1 }}
         >
-          {isLoading ? currentStep || 'Processing...' : (initialContentHash ? 'Create Reserve & Deploy' : 'Create Reserve')}
+          {isLoading ? currentStep || 'Processing...' : (initialContentHash ? 'Create Vault & Deploy' : 'Create Vault')}
         </button>
       </div>
     </>

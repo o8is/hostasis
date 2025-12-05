@@ -6,9 +6,9 @@ import { useAccount } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import Navigation from '../components/Navigation';
 import DepositsList from '../components/DepositsList';
-import CreateReserveModal from '../components/CreateReserveModal';
+import CreateVaultModal from '../components/CreateVaultModal';
 import { useFeedService } from '../hooks/useFeedService';
-import styles from './reserves.module.css';
+import styles from './vaults.module.css';
 import { POSTAGE_STAMP_ADDRESS, GNOSIS_RPC_URL } from '../contracts/addresses';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
 import { createPublicClient, http } from 'viem';
@@ -20,23 +20,23 @@ const publicClient = createPublicClient({
   transport: http(GNOSIS_RPC_URL),
 });
 
-const ReservesPage: NextPage = () => {
+const VaultsPage: NextPage = () => {
   const { isConnected, address } = useAccount();
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  
+
   // Feed service for live URLs
   const feedService = useFeedService();
   const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [isInitializingFeed, setIsInitializingFeed] = useState(false);
 
-  // Get amount from query string (e.g., /reserves?amount=100)
+  // Get amount from query string (e.g., /vaults?amount=100)
   const initialAmount = typeof router.query.amount === 'string' ? router.query.amount : undefined;
-  // Get stampId from query string (e.g., /reserves?stampId=0x...)
+  // Get stampId from query string (e.g., /vaults?stampId=0x...)
   const initialStampId = typeof router.query.stampId === 'string' ? router.query.stampId : undefined;
-  // Get contentHash from query string (e.g., /reserves?contentHash=abc123...)
+  // Get contentHash from query string (e.g., /vaults?contentHash=abc123...)
   const initialContentHash = typeof router.query.contentHash === 'string' ? router.query.contentHash : undefined;
 
   // Auto-open modal if amount or stampId is in query string
@@ -50,12 +50,12 @@ const ReservesPage: NextPage = () => {
     setRefreshKey((prev) => prev + 1);
     // Clear the query string after successful creation
     if (initialAmount || initialStampId || initialContentHash) {
-      router.replace('/reserves', undefined, { shallow: true });
+      router.replace('/vaults', undefined, { shallow: true });
     }
   };
 
-  // Handle reserve creation with feed initialization
-  const handleCreateSuccessWithIndex = async (reserveIndex: number, stampId: string) => {
+  // Handle vault creation with feed initialization
+  const handleCreateSuccessWithIndex = async (vaultIndex: number, stampId: string) => {
     setRefreshKey((prev) => prev + 1);
 
     // If we have a content hash, initialize the feed
@@ -74,8 +74,8 @@ const ReservesPage: NextPage = () => {
         });
 
         // Initialize feed and deploy first version
-        await feedService.initializeFeed(reserveIndex, stampId, Number(depth), initialContentHash);
-        const url = feedService.getFeedManifestUrl(reserveIndex);
+        await feedService.initializeFeed(vaultIndex, stampId, Number(depth), initialContentHash);
+        const url = feedService.getFeedManifestUrl(vaultIndex);
         setLiveUrl(url);
 
         // Close modal after success
@@ -87,10 +87,10 @@ const ReservesPage: NextPage = () => {
         setIsInitializingFeed(false);
       }
     }
-    
+
     // Clear the query string after successful creation
     if (initialAmount || initialStampId || initialContentHash) {
-      router.replace('/reserves', undefined, { shallow: true });
+      router.replace('/vaults', undefined, { shallow: true });
     }
   };
 
@@ -98,92 +98,56 @@ const ReservesPage: NextPage = () => {
     setShowCreateModal(false);
     // Clear the query string if user closes without creating
     if (initialAmount || initialStampId || initialContentHash) {
-      router.replace('/reserves', undefined, { shallow: true });
+      router.replace('/vaults', undefined, { shallow: true });
     }
   };
 
   return (
     <>
       <Head>
-        <title>Reserves | Hostasis</title>
-        <meta content="Manage your storage reserves on Hostasis." name="description" />
+        <title>Vaults | Hostasis</title>
+        <meta content="Manage your storage vaults on Hostasis." name="description" />
         <link href="/favicon.ico" rel="icon" />
       </Head>
 
       <Navigation />
 
-      <div className={`container ${styles.reservesContainer}`}>
+      <div className={`container ${styles.vaultsContainer}`}>
         {!isConnected ? (
           <div className="info-box" style={{ textAlign: 'center', maxWidth: '500px', margin: '4rem auto' }}>
             <h3 style={{ marginTop: 0 }}>Connect Your Wallet</h3>
-            <p className="description">You need to connect your wallet to view and manage your reserves.</p>
+            <p className="description">You need to connect your wallet to view and manage your vaults.</p>
             <div style={{ display: 'flex', justifyContent: 'center', marginTop: '1rem' }}>
               <ConnectButton />
             </div>
           </div>
         ) : (
-          <DepositsList
-            key={refreshKey}
-            onCreateClick={() => setShowCreateModal(true)}
-            initialAmount={initialAmount}
-          />
+          <>
+            <div className={styles.vaultsHeader}>
+              <h2>Vaults</h2>
+              <button
+                className={styles.createVaultButton}
+                onClick={() => setShowCreateModal(true)}
+              >
+                + Create Vault
+              </button>
+            </div>
+            <DepositsList
+              key={refreshKey}
+              onCreateClick={() => setShowCreateModal(true)}
+              initialAmount={initialAmount}
+            />
+          </>
         )}
-        
-        {/* Show URL after successful feed initialization */}
-        {liveUrl && (
-          <div className="info-box" style={{ marginTop: '2rem', textAlign: 'center' }}>
-            <h3 style={{ marginTop: 0, color: '#4ade80' }}>✓ Content Tracking Enabled!</h3>
-            <p className="description">
-              Live URL — update your content anytime from the &quot;Update Site&quot; button:
-            </p>
-            <a
-              href={liveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: 'block',
-                marginTop: '1rem',
-                padding: '0.75rem 1rem',
-                background: 'rgba(74, 158, 255, 0.1)',
-                borderRadius: '8px',
-                color: '#4a9eff',
-                wordBreak: 'break-all',
-                fontFamily: 'monospace',
-                fontSize: '0.9rem'
-              }}
-            >
-              {liveUrl}
-            </a>
-            <button
-              onClick={() => setLiveUrl(null)}
-              style={{ marginTop: '1rem' }}
-              className="view-button"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-        
-        {feedError && (
-          <div className="info-box" style={{ marginTop: '2rem', textAlign: 'center', borderColor: '#ef4444' }}>
-            <p style={{ color: '#ef4444', margin: 0 }}>Feed Error: {feedError}</p>
-            <button 
-              onClick={() => setFeedError(null)}
-              style={{ marginTop: '1rem' }}
-              className="view-button"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
+
       </div>
 
       {showCreateModal && (
-        <CreateReserveModal 
-          onClose={handleCloseModal} 
+        <CreateVaultModal
+          onClose={handleCloseModal}
           onSuccess={initialContentHash ? undefined : handleCreateSuccess}
           onSuccessWithIndex={initialContentHash ? handleCreateSuccessWithIndex : undefined}
-          initialAmount={initialAmount} 
+          initialAmount={initialAmount}
           initialStampId={initialStampId}
           initialContentHash={initialContentHash}
         />
@@ -192,4 +156,4 @@ const ReservesPage: NextPage = () => {
   );
 };
 
-export default ReservesPage;
+export default VaultsPage;

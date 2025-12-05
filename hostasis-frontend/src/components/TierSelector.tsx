@@ -1,17 +1,17 @@
 /**
- * TierSelector - Reserve tier selection component
+ * TierSelector - Vault tier selection component
  *
- * Allows users to select a reserve capacity tier for their uploads.
+ * Allows users to select a vault capacity tier for their uploads.
  * Auto-selects recommended tier based on file size, but allows upgrading.
  */
 
-import { RESERVE_TIERS, type ReserveTier } from '../utils/projectStorage';
+import { VAULT_TIERS, type VaultTier } from '../utils/projectStorage';
 import styles from './TierSelector.module.css';
 
 interface TierSelectorProps {
-  selectedTier: ReserveTier;
-  onTierChange: (tier: ReserveTier) => void;
-  recommendedTier?: ReserveTier;
+  selectedTier: VaultTier;
+  onTierChange: (tier: VaultTier) => void;
+  recommendedTier?: VaultTier;
   disabled?: boolean;
 }
 
@@ -21,7 +21,7 @@ export default function TierSelector({
   recommendedTier,
   disabled = false,
 }: TierSelectorProps) {
-  const tiers = Object.entries(RESERVE_TIERS) as [ReserveTier, typeof RESERVE_TIERS[ReserveTier]][];
+  const tiers = Object.entries(VAULT_TIERS) as [VaultTier, typeof VAULT_TIERS[VaultTier]][];
 
   return (
     <div className={styles.container}>
@@ -37,7 +37,7 @@ export default function TierSelector({
             type="button"
             className={`${styles.tierOption} ${isSelected ? styles.selected : ''} ${isBelowRecommended ? styles.tooSmall : ''}`}
             onClick={(e) => {
-              e.stopPropagation(); // Prevent ReserveSelector parent from resetting tier
+              e.stopPropagation(); // Prevent VaultSelector parent from resetting tier
               if (!disabled && !isBelowRecommended) {
                 onTierChange(key);
               }

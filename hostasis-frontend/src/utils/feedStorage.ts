@@ -1,6 +1,6 @@
 /**
- * Feed Storage - localStorage persistence for feed data per reserve
- * 
+ * Feed Storage - localStorage persistence for feed data per vault
+ *
  * Stores:
  * - Feed owner address (the Ethereum address that owns the feed)
  * - Current content version (the latest deployed content hash)
@@ -18,20 +18,20 @@ interface FeedData {
 }
 
 /**
- * Get the storage key for a reserve's feed data
+ * Get the storage key for a vault's feed data
  */
-function getStorageKey(reserveIndex: number): string {
-  return `${STORAGE_PREFIX}${reserveIndex}`;
+function getStorageKey(vaultIndex: number): string {
+  return `${STORAGE_PREFIX}${vaultIndex}`;
 }
 
 /**
- * Get all feed data for a reserve
+ * Get all feed data for a vault
  */
-function getFeedData(reserveIndex: number): FeedData | null {
+function getFeedData(vaultIndex: number): FeedData | null {
   if (typeof window === 'undefined') return null;
-  
+
   try {
-    const data = localStorage.getItem(getStorageKey(reserveIndex));
+    const data = localStorage.getItem(getStorageKey(vaultIndex));
     return data ? JSON.parse(data) : null;
   } catch {
     return null;
@@ -39,31 +39,31 @@ function getFeedData(reserveIndex: number): FeedData | null {
 }
 
 /**
- * Save feed data for a reserve
+ * Save feed data for a vault
  */
-function setFeedData(reserveIndex: number, data: FeedData): void {
+function setFeedData(vaultIndex: number, data: FeedData): void {
   if (typeof window === 'undefined') return;
-  
-  localStorage.setItem(getStorageKey(reserveIndex), JSON.stringify(data));
+
+  localStorage.setItem(getStorageKey(vaultIndex), JSON.stringify(data));
 }
 
 /**
- * Get the feed owner address for a reserve
+ * Get the feed owner address for a vault
  * Used to construct /feeds/{owner}/{topic} URL
  */
-export function getFeedOwner(reserveIndex: number): string | null {
-  const data = getFeedData(reserveIndex);
+export function getFeedOwner(vaultIndex: number): string | null {
+  const data = getFeedData(vaultIndex);
   // Support both old (manifestRef) and new (ownerAddress) format
   return data?.ownerAddress ?? (data as any)?.manifestRef ?? null;
 }
 
 /**
- * Set the feed owner address for a reserve
+ * Set the feed owner address for a vault
  * Called once when the feed is initialized
  */
-export function setFeedOwner(reserveIndex: number, ownerAddress: string): void {
-  const existing = getFeedData(reserveIndex);
-  setFeedData(reserveIndex, {
+export function setFeedOwner(vaultIndex: number, ownerAddress: string): void {
+  const existing = getFeedData(vaultIndex);
+  setFeedData(vaultIndex, {
     ...existing,
     ownerAddress,
     updatedAt: Date.now(),
@@ -71,25 +71,25 @@ export function setFeedOwner(reserveIndex: number, ownerAddress: string): void {
 }
 
 /**
- * Get the current content version (hash) for a reserve
+ * Get the current content version (hash) for a vault
  */
-export function getCurrentVersion(reserveIndex: number): string | null {
-  const data = getFeedData(reserveIndex);
+export function getCurrentVersion(vaultIndex: number): string | null {
+  const data = getFeedData(vaultIndex);
   return data?.currentVersion ?? null;
 }
 
 /**
- * Set the current content version for a reserve
+ * Set the current content version for a vault
  * Called after each deploy
  */
-export function setCurrentVersion(reserveIndex: number, contentRef: string): void {
-  const existing = getFeedData(reserveIndex);
+export function setCurrentVersion(vaultIndex: number, contentRef: string): void {
+  const existing = getFeedData(vaultIndex);
   if (!existing) {
-    console.warn(`Cannot set current version for reserve ${reserveIndex}: no feed manifest found`);
+    console.warn(`Cannot set current version for vault ${vaultIndex}: no feed manifest found`);
     return;
   }
-  
-  setFeedData(reserveIndex, {
+
+  setFeedData(vaultIndex, {
     ...existing,
     currentVersion: contentRef,
     updatedAt: Date.now(),
@@ -97,26 +97,26 @@ export function setCurrentVersion(reserveIndex: number, contentRef: string): voi
 }
 
 /**
- * Get the feed manifest URL for a reserve
+ * Get the feed manifest URL for a vault
  * Returns the /bzz/{hash}/ URL for accessing the feed
  */
-export function getFeedManifestUrl(reserveIndex: number): string | null {
-  const data = getFeedData(reserveIndex);
+export function getFeedManifestUrl(vaultIndex: number): string | null {
+  const data = getFeedData(vaultIndex);
   return data?.manifestUrl ?? null;
 }
 
 /**
- * Set the feed manifest URL for a reserve
+ * Set the feed manifest URL for a vault
  * Called once when the feed is initialized
  */
-export function setFeedManifestUrl(reserveIndex: number, manifestUrl: string, manifestReference?: string): void {
-  const existing = getFeedData(reserveIndex);
+export function setFeedManifestUrl(vaultIndex: number, manifestUrl: string, manifestReference?: string): void {
+  const existing = getFeedData(vaultIndex);
   if (!existing) {
-    console.warn(`Cannot set manifest URL for reserve ${reserveIndex}: no feed data found`);
+    console.warn(`Cannot set manifest URL for vault ${vaultIndex}: no feed data found`);
     return;
   }
 
-  setFeedData(reserveIndex, {
+  setFeedData(vaultIndex, {
     ...existing,
     manifestUrl,
     ...(manifestReference && { manifestReference }),
@@ -125,35 +125,35 @@ export function setFeedManifestUrl(reserveIndex: number, manifestUrl: string, ma
 }
 
 /**
- * Get the feed manifest reference for a reserve
+ * Get the feed manifest reference for a vault
  * Returns the hash that can be used with any gateway
  */
-export function getFeedManifestReference(reserveIndex: number): string | null {
-  const data = getFeedData(reserveIndex);
+export function getFeedManifestReference(vaultIndex: number): string | null {
+  const data = getFeedData(vaultIndex);
   return data?.manifestReference ?? null;
 }
 
 /**
- * Get the current feed index for a reserve
+ * Get the current feed index for a vault
  * Returns 0 if not set (feed just initialized)
  */
-export function getCurrentFeedIndex(reserveIndex: number): number {
-  const data = getFeedData(reserveIndex);
+export function getCurrentFeedIndex(vaultIndex: number): number {
+  const data = getFeedData(vaultIndex);
   return data?.currentIndex ?? 0;
 }
 
 /**
- * Set the current feed index for a reserve
+ * Set the current feed index for a vault
  * Called after each deployment to track the latest index
  */
-export function setCurrentFeedIndex(reserveIndex: number, index: number): void {
-  const existing = getFeedData(reserveIndex);
+export function setCurrentFeedIndex(vaultIndex: number, index: number): void {
+  const existing = getFeedData(vaultIndex);
   if (!existing) {
-    console.warn(`Cannot set feed index for reserve ${reserveIndex}: no feed data found`);
+    console.warn(`Cannot set feed index for vault ${vaultIndex}: no feed data found`);
     return;
   }
 
-  setFeedData(reserveIndex, {
+  setFeedData(vaultIndex, {
     ...existing,
     currentIndex: index,
     updatedAt: Date.now(),
@@ -161,8 +161,8 @@ export function setCurrentFeedIndex(reserveIndex: number, index: number): void {
 }
 
 /**
- * Check if a reserve has a feed initialized
+ * Check if a vault has a feed initialized
  */
-export function hasFeed(reserveIndex: number): boolean {
-  return getFeedOwner(reserveIndex) !== null;
+export function hasFeed(vaultIndex: number): boolean {
+  return getFeedOwner(vaultIndex) !== null;
 }

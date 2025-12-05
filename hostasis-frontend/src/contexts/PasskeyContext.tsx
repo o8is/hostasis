@@ -11,6 +11,21 @@ import {
   hasPasskeyWallet as checkHasPasskeyWallet
 } from '../utils/passkeyStorage';
 
+// Helper to encode salt for largeBlob storage
+function encodeSaltForBlob(salt: Uint8Array): Uint8Array {
+  // Prefix with a version byte for future compatibility
+  const blob = new Uint8Array(1 + salt.length);
+  blob[0] = 1; // version 1
+  blob.set(salt, 1);
+  return blob;
+}
+
+// Helper to decode salt from largeBlob
+function decodeSaltFromBlob(blob: Uint8Array): Uint8Array | null {
+  if (blob.length < 33 || blob[0] !== 1) return null;
+  return blob.slice(1, 33);
+}
+
 export interface PasskeyWalletInfo {
   address: Hex;
   privateKey: Hex;
@@ -40,7 +55,7 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
 
   const deriveWalletFromPRF = useCallback((prfOutput: Uint8Array, salt: Uint8Array): PasskeyWalletInfo => {
     // Derive private key using HKDF
-    const privateKeyBytes = hkdf(sha256, prfOutput, salt, 'Hostasis Swarm Stamp Wallet', 32);
+    const privateKeyBytes = hkdf(sha256, prfOutput, salt, 'Hostasis Wallet', 32);
 
     // Get public key
     const publicKeyBytes = secp256k1.getPublicKey(privateKeyBytes, false); // uncompressed
@@ -74,8 +89,8 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
         },
         user: {
           id: userId,
-          name: 'Hostasis User',
-          displayName: 'Hostasis Stamp Wallet'
+          name: 'Hostasis',
+          displayName: 'Hostasis Wallet'
         },
         pubKeyCredParams: [
           { type: 'public-key', alg: -7 },  // ES256
@@ -93,6 +108,10 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
             eval: {
               first: salt
             }
+          },
+          // Request largeBlob support for salt backup (survives localStorage clearing)
+          largeBlob: {
+            support: 'preferred'
           }
         } as any // PRF extension not in standard types yet
       };
@@ -124,9 +143,38 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
       // Derive wallet
       const wallet = deriveWalletFromPRF(prfOutput, salt);
 
-      // Store salt and credential ID
+      // Store salt and credential ID in localStorage
       storeSalt(salt);
       storeCredentialId(credential.id);
+
+      // If largeBlob is supported, also store salt there as backup
+      // This survives localStorage clearing
+      if (extensionResults?.largeBlob?.supported) {
+        try {
+          // Write salt to largeBlob in a separate authentication
+          const writeChallenge = crypto.getRandomValues(new Uint8Array(32));
+          await navigator.credentials.get({
+            publicKey: {
+              challenge: writeChallenge,
+              timeout: 60000,
+              userVerification: 'required',
+              allowCredentials: [{
+                type: 'public-key',
+                id: credential.rawId
+              }],
+              extensions: {
+                largeBlob: {
+                  write: encodeSaltForBlob(salt)
+                }
+              }
+            } as any
+          });
+          console.log('Salt backed up to passkey largeBlob');
+        } catch (blobErr) {
+          // largeBlob write failed - not critical, localStorage still works
+          console.warn('Failed to backup salt to largeBlob:', blobErr);
+        }
+      }
 
       setIsConfigured(true);
       setWalletInfo(wallet);
@@ -151,8 +199,45 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      // Retrieve stored salt
-      const salt = retrieveSalt();
+      // Retrieve stored salt from localStorage
+      let salt = retrieveSalt();
+
+      // If no salt in localStorage, try to recover from largeBlob
+      if (!salt) {
+        console.log('No salt in localStorage, attempting largeBlob recovery...');
+
+        // First, authenticate to read largeBlob
+        const recoveryChallenge = crypto.getRandomValues(new Uint8Array(32));
+        const recoveryAssertion = await navigator.credentials.get({
+          publicKey: {
+            challenge: recoveryChallenge,
+            timeout: 60000,
+            userVerification: 'required',
+            extensions: {
+              largeBlob: {
+                read: true
+              }
+            }
+          } as any
+        }) as PublicKeyCredential;
+
+        if (recoveryAssertion) {
+          const recoveryResults = recoveryAssertion.getClientExtensionResults() as any;
+          if (recoveryResults?.largeBlob?.blob) {
+            const blobData = new Uint8Array(recoveryResults.largeBlob.blob);
+            const recoveredSalt = decodeSaltFromBlob(blobData);
+            if (recoveredSalt) {
+              console.log('Salt recovered from largeBlob! Restoring to localStorage...');
+              salt = recoveredSalt;
+              // Restore to localStorage for future use
+              storeSalt(salt);
+              storeCredentialId(recoveryAssertion.id);
+              setIsConfigured(true);
+            }
+          }
+        }
+      }
+
       if (!salt) {
         throw new Error('No passkey wallet configured. Please create one first.');
       }

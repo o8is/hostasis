@@ -11,7 +11,7 @@ import { getUploadsByBatchId, type UploadRecord } from '../utils/uploadHistory'
 import { useStampInfo, formatTimeRemaining } from '../hooks/useStampInfo'
 import { useFeedService } from '../hooks/useFeedService'
 import { hasFeed as checkHasFeed, getCurrentVersion, getFeedManifestReference } from '../utils/feedStorage'
-import { getReserveData, type ProjectData, type ReserveTier, RESERVE_TIERS } from '../utils/projectStorage'
+import { getVaultData, type ProjectData, type VaultTier, VAULT_TIERS } from '../utils/projectStorage'
 
 type Deposit = {
   sDAIAmount: bigint
@@ -54,22 +54,22 @@ export default function DepositCard({
   const feedService = useFeedService()
   const feedExists = checkHasFeed(depositIndex)
 
-  // Fetch projects for this reserve
+  // Fetch projects for this vault
   useEffect(() => {
-    const reserve = getReserveData(depositIndex)
-    if (reserve) {
+    const vault = getVaultData(depositIndex)
+    if (vault) {
       // Only update if projects actually changed (deep comparison of slugs)
       setProjects(prev => {
-        const newSlugs = reserve.projects.map(p => p.slug).sort().join(',')
+        const newSlugs = vault.projects.map(p => p.slug).sort().join(',')
         const prevSlugs = prev.map(p => p.slug).sort().join(',')
-        return newSlugs !== prevSlugs ? reserve.projects : prev
+        return newSlugs !== prevSlugs ? vault.projects : prev
       })
     }
   }, [depositIndex, refetchTrigger])
 
-  // Get reserve tier info
-  const reserve = getReserveData(depositIndex)
-  const tierInfo = reserve ? RESERVE_TIERS[reserve.tier as ReserveTier] : null
+  // Get vault tier info
+  const vault = getVaultData(depositIndex)
+  const tierInfo = vault ? VAULT_TIERS[vault.tier as VaultTier] : null
 
   const { data: deposit, refetch } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
@@ -155,7 +155,7 @@ export default function DepositCard({
 
   if (!deposit || !depositData) return null
 
-  // Filter out fully withdrawn reserves
+  // Filter out fully withdrawn vaults
   if (depositData.sDAIAmount === 0n) return null
 
   const depositDate = new Date(Number(depositData.depositTime) * 1000)
@@ -168,10 +168,10 @@ export default function DepositCard({
 
   return (
     <div className={`info-box ${styles.depositCard}`}>
-      {/* Header with reserve number, tier, and date */}
+      {/* Header with vault number, tier, and date */}
       <div className={styles.header}>
         <h4 className={styles.title}>
-          Reserve #{depositIndex}
+          Vault #{depositIndex}
           {tierInfo && (
             <span className={styles.tierBadge}>{tierInfo.name}</span>
           )}
@@ -247,7 +247,7 @@ export default function DepositCard({
                   })()}
                   <button
                     className={`view-button view-button--small ${styles.updateBtn}`}
-                    onClick={() => router.push(`/upload?reserveId=${depositIndex}&project=${project.slug}`)}
+                    onClick={() => router.push(`/upload?vaultId=${depositIndex}&project=${project.slug}`)}
                     title="Push new version"
                   >
                     Update
@@ -258,7 +258,7 @@ export default function DepositCard({
           })}
         </div>
       ) : feedUrl ? (
-        /* Legacy: single feed URL for reserves without projects */
+        /* Legacy: single feed URL for vaults without projects */
         <div className={styles.stableUrl}>
           <div className={styles.stableUrlLabel}>
             Live URL
@@ -322,11 +322,11 @@ export default function DepositCard({
         </div>
       )}
 
-      {/* Reserve Status - Secondary Info */}
+      {/* Vault Status - Secondary Info */}
       <div className={styles.status}>
         <div className={styles.statusItem}>
           <div>
-            <div className={styles.statusLabel}>Reserved</div>
+            <div className={styles.statusLabel}>Deposited</div>
             <div className={styles.statusValue}>
               <TokenAmount value={depositData.principalDAI} symbol="DAI" />
             </div>
@@ -346,15 +346,15 @@ export default function DepositCard({
 
       {/* Actions - Clear Hierarchy */}
       <div className={styles.actions}>
-        {/* Primary action: Add new project to reserve */}
+        {/* Primary action: Add new project to vault */}
         <button
           className={`view-button view-button--primary ${styles.actionPrimary}`}
-          onClick={() => router.push(`/upload?reserveId=${depositIndex}`)}
+          onClick={() => router.push(`/upload?vaultId=${depositIndex}`)}
         >
           {projects.length > 0 ? 'Add Project' : 'Deploy Site'}
         </button>
 
-        {/* Legacy: Enable updates for old reserves without projects */}
+        {/* Legacy: Enable updates for old vaults without projects */}
         {!projects.length && latestUpload && !feedExists && (
           <button
             className={`view-button ${styles.actionSecondary}`}

@@ -1,11 +1,11 @@
 import Link from 'next/link';
 
-interface EmptyReservesStateProps {
+interface EmptyVaultsStateProps {
   onCreateClick: () => void;
   initialAmount?: string;
 }
 
-export default function EmptyReservesState({ onCreateClick, initialAmount }: EmptyReservesStateProps) {
+export default function EmptyVaultsState({ onCreateClick, initialAmount }: EmptyVaultsStateProps) {
   return (
     <div className="empty-state">
       <div className="empty-state-icon">
@@ -25,10 +25,10 @@ export default function EmptyReservesState({ onCreateClick, initialAmount }: Emp
         </svg>
       </div>
 
-      <h2 className="empty-state-title">No reserves yet</h2>
+      <h2 className="empty-state-title">No vaults yet</h2>
 
       <p className="empty-state-description">
-        Create your first reserve to start hosting files permanently. Your reserve earns yield that automatically pays for Swarm storage.
+        Create your first vault to start hosting files permanently. Your vault earns yield that automatically pays for Swarm storage.
       </p>
 
       <button
@@ -36,8 +36,8 @@ export default function EmptyReservesState({ onCreateClick, initialAmount }: Emp
         className="empty-state-cta"
       >
         {initialAmount
-          ? `Create Reserve with ${initialAmount} DAI`
-          : 'Create Your First Reserve'}
+          ? `Create Vault with ${initialAmount} DAI`
+          : 'Create Your First Vault'}
       </button>
 
       <Link href="/#mechanism" className="empty-state-link">

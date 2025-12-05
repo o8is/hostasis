@@ -1,13 +1,13 @@
-/* Reserves Page Specific Styles */
+/* Vaults Page Specific Styles */
 
-.reservesContainer {
+.vaultsContainer {
   width: 100%;
   max-width: 800px;
   /* Force the parent flex container to expand on desktop */
   min-width: 800px;
   margin-left: auto;
   margin-right: auto;
-  
+
   /* Fix vertical spacing/centering */
   min-height: 100vh;
   padding-top: 80px;
@@ -17,27 +17,28 @@
 }
 
 @media (max-width: 840px) {
-  .reservesContainer {
+  .vaultsContainer {
     min-width: 500px;
     padding: 0 1rem;
   }
 }
 
-.reservesHeader {
+.vaultsHeader {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
 }
 
-.reservesHeader h1 {
-  font-size: 2rem;
+.vaultsHeader h1,
+.vaultsHeader h2 {
+  font-size: 1.5rem;
   font-weight: 600;
   color: #e0e0e0;
   margin: 0;
 }
 
-.createReserveButton {
+.createVaultButton {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -52,7 +53,7 @@
   transition: all 0.3s ease;
 }
 
-.createReserveButton:hover {
+.createVaultButton:hover {
   background: linear-gradient(135deg, var(--o8-tertiary-light), var(--o8-tertiary));
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(255, 183, 74, 0.3);

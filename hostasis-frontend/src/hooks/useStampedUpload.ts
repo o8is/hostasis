@@ -11,7 +11,7 @@ export interface UseStampedUploadReturn {
   uploadWithStamper: (
     files: File[],
     batchId: string,
-    batchOwnerPrivateKey: Hex, // Reserve key (batch owner) - NOT the passkey!
+    batchOwnerPrivateKey: Hex, // Vault key (batch owner) - NOT the passkey!
     depth: number,
     gatewayUrl?: string,
     options?: UploadOptions
@@ -40,7 +40,7 @@ export function useStampedUpload(): UseStampedUploadReturn {
   const uploadWithStamper = useCallback(async (
     files: File[],
     batchId: string,
-    batchOwnerPrivateKey: Hex, // This should be the reserve key (batch owner), not the passkey!
+    batchOwnerPrivateKey: Hex, // This should be the vault key (batch owner), not the passkey!
     depth: number,
     gatewayUrl: string = SWARM_GATEWAY_URL,
     options: UploadOptions = {}
@@ -57,11 +57,13 @@ export function useStampedUpload(): UseStampedUploadReturn {
       }
 
       // Create uploader instance
+      // Infinity lets browser manage via HTTP/2 multiplexing
       const uploader = new StampedUploader({
         gatewayUrl: gatewayUrl || SWARM_GATEWAY_URL,
         batchId,
-        privateKey: batchOwnerPrivateKey, // Reserve key owns the batch
-        depth
+        privateKey: batchOwnerPrivateKey, // Vault key owns the batch
+        depth,
+        concurrency: Infinity,
       });
 
       // Upload with progress tracking

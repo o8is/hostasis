@@ -2,7 +2,7 @@
  * Upload History Tracking Utility
  *
  * Tracks file uploads to Swarm, linking them to postage batch IDs.
- * This allows users to see which files are associated with each reserve.
+ * This allows users to see which files are associated with each vault.
  */
 
 export interface UploadedFile {

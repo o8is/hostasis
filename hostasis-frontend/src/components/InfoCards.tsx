@@ -9,13 +9,13 @@ interface InfoCard {
 const infoCards: InfoCard[] = [
   {
     step: "1",
-    title: "Reserve",
-    description: "Create a reserve with DAI (and soon ETH, USDC, or fiat) in a yield vault."
+    title: "Deposit",
+    description: "Create a vault with DAI (and soon ETH, USDC, or fiat) in a yield vault."
   },
   {
     step: "2",
     title: "Earn",
-    description: "Your reserve earns yield automatically. Your funds never leave the vault."
+    description: "Your vault earns yield automatically. Your funds never leave the vault."
   },
   {
     step: "3",

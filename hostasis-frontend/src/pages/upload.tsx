@@ -6,33 +6,33 @@ import { useAccount, useWalletClient, usePublicClient, useReadContract } from 'w
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import Navigation from '../components/Navigation';
 import FileDropZone from '../components/FileDropZone';
-import ReserveSelector, { type ReserveSelection } from '../components/ReserveSelector';
-import ReserveCard from '../components/ReserveCard';
+import VaultSelector, { type VaultSelection } from '../components/VaultSelector';
+import VaultCard from '../components/VaultCard';
 import { CopyDropdownButton, type CopyOption } from '../components/CopyDropdownButton';
 import { POSTAGE_MANAGER_ADDRESS, POSTAGE_STAMP_ADDRESS } from '../contracts/addresses';
 import PostageManagerABI from '../contracts/abis/PostageYieldManager.json';
 import PostageStampABI from '../contracts/abis/PostageStamp.json';
 import { useStorageCalculator } from '../hooks/useStorageCalculator';
 import { usePasskeyWallet } from '../hooks/usePasskeyWallet';
-import { useReserveWalletBatchCreation } from '../hooks/useReserveWalletBatchCreation';
+import { useVaultBatchCreation } from '../hooks/useVaultBatchCreation';
 import { useStampedUpload } from '../hooks/useStampedUpload';
 import { useFeedService } from '../hooks/useFeedService';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
-import { deriveReserveKey } from '../utils/reserveKeys';
+import { deriveVaultKey } from '../utils/vaultKeys';
 import {
   normalizeProjectSlug,
   isValidProjectSlug,
   getRecommendedTier,
-  getAllReserves,
-  getReserveData,
-  createReserve,
-  deleteReserve,
+  getAllVaults,
+  getVaultData,
+  createVault,
+  deleteVault,
   addProject,
   updateProject,
-  RESERVE_TIERS,
-  type ReserveTier,
-  type ReserveData,
+  VAULT_TIERS,
+  type VaultTier,
+  type VaultData,
 } from '../utils/projectStorage';
 import { deriveProjectKey } from '@hostasis/swarm-stamper';
 import styles from './upload.module.css';
@@ -46,34 +46,34 @@ interface UploadState {
   // Config
   projectName: string;
   projectSlug: string;
-  reserveSelection: ReserveSelection;
+  vaultSelection: VaultSelection;
   isSPA: boolean;
   // Results
   batchId?: string;
   swarmUrl?: string;
   swarmReference?: string;
   manifestUrl?: string;
-  reserveIndex?: number;
+  vaultIndex?: number;
 }
 
 const Upload: NextPage = () => {
   const router = useRouter();
   const { isConnected, address } = useAccount();
 
-  // Load existing reserves
-  const [reserves, setReserves] = useState<ReserveData[]>([]);
+  // Load existing vaults
+  const [vaults, setVaults] = useState<VaultData[]>([]);
   useEffect(() => {
-    setReserves(getAllReserves());
+    setVaults(getAllVaults());
   }, []);
 
   // For updating existing projects (via query param)
-  const existingReserveId = typeof router.query.reserveId === 'string' ? parseInt(router.query.reserveId) : undefined;
+  const existingVaultId = typeof router.query.vaultId === 'string' ? parseInt(router.query.vaultId) : undefined;
   const existingProjectSlug = typeof router.query.project === 'string' ? router.query.project : undefined;
 
   // Get existing project data if updating
-  const existingReserve = existingReserveId !== undefined ? getReserveData(existingReserveId) : undefined;
-  const existingProject = existingReserve && existingProjectSlug
-    ? existingReserve.projects.find(p => p.slug === existingProjectSlug)
+  const existingVault = existingVaultId !== undefined ? getVaultData(existingVaultId) : undefined;
+  const existingProject = existingVault && existingProjectSlug
+    ? existingVault.projects.find(p => p.slug === existingProjectSlug)
     : undefined;
   const isUpdateMode = !!existingProject;
 
@@ -84,20 +84,20 @@ const Upload: NextPage = () => {
     step: 'drop',
     projectName: '',
     projectSlug: '',
-    reserveSelection: { type: 'new', tier: 'standard' },
+    vaultSelection: { type: 'new', tier: 'standard' },
     isSPA: false,
   });
 
   // Update state when we have existing project info
   useEffect(() => {
-    if (isUpdateMode && existingProject && existingReserveId !== undefined) {
+    if (isUpdateMode && existingProject && existingVaultId !== undefined) {
       // Only update if values have changed
       setState(prev => {
         const needsUpdate =
           prev.projectName !== existingProject.displayName ||
           prev.projectSlug !== existingProject.slug ||
-          prev.reserveSelection.type !== 'existing' ||
-          (prev.reserveSelection.type === 'existing' && prev.reserveSelection.reserveIndex !== existingReserveId);
+          prev.vaultSelection.type !== 'existing' ||
+          (prev.vaultSelection.type === 'existing' && prev.vaultSelection.vaultIndex !== existingVaultId);
 
         if (!needsUpdate) return prev;
 
@@ -105,23 +105,23 @@ const Upload: NextPage = () => {
           ...prev,
           projectName: existingProject.displayName,
           projectSlug: existingProject.slug,
-          reserveSelection: { type: 'existing', reserveIndex: existingReserveId },
+          vaultSelection: { type: 'existing', vaultIndex: existingVaultId },
         };
       });
     }
-  }, [isUpdateMode, existingProject?.displayName, existingProject?.slug, existingReserveId]);
+  }, [isUpdateMode, existingProject?.displayName, existingProject?.slug, existingVaultId]);
 
   const [currentAction, setCurrentAction] = useState('');
   const [deployError, setDeployError] = useState<string | null>(null);
 
-  // Fetch existing reserve info if updating
+  // Fetch existing vault info if updating
   const { data: existingDeposit } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
     abi: PostageManagerABI,
     functionName: 'getUserDeposit',
-    args: address && existingReserveId !== undefined ? [address, BigInt(existingReserveId)] : undefined,
+    args: address && existingVaultId !== undefined ? [address, BigInt(existingVaultId)] : undefined,
     query: {
-      enabled: !!address && existingReserveId !== undefined,
+      enabled: !!address && existingVaultId !== undefined,
     },
   });
 
@@ -149,10 +149,10 @@ const Upload: NextPage = () => {
     authenticatePasskeyWallet,
   } = usePasskeyWallet();
 
-  const { createBatchWithReserveWallet, isCreating: isBatchCreating, currentStep } = useReserveWalletBatchCreation();
+  const { createBatchWithVaultWallet, isCreating: isBatchCreating, currentStep } = useVaultBatchCreation();
   const { uploadWithStamper, progress: uploadProgress, error: uploadError, reset: resetUpload } = useStampedUpload();
 
-  // Get user's deposit count to derive next reserve index
+  // Get user's deposit count to derive next vault index
   const { data: depositCount } = useReadContract({
     address: POSTAGE_MANAGER_ADDRESS,
     abi: PostageManagerABI,
@@ -174,18 +174,18 @@ const Upload: NextPage = () => {
 
   // Update recommended tier when files change
   useEffect(() => {
-    if (state.step === 'config' && state.reserveSelection.type === 'new') {
+    if (state.step === 'config' && state.vaultSelection.type === 'new') {
       setState(prev => ({
         ...prev,
-        reserveSelection: { type: 'new', tier: recommendedTier },
+        vaultSelection: { type: 'new', tier: recommendedTier },
       }));
     }
   }, [recommendedTier]);
 
   // Calculate costs based on selected tier
   const storageSizeGB = state.totalSize / (1024 * 1024 * 1024);
-  const selectedTierDepth = state.reserveSelection.type === 'new'
-    ? RESERVE_TIERS[state.reserveSelection.tier].depth
+  const selectedTierDepth = state.vaultSelection.type === 'new'
+    ? VAULT_TIERS[state.vaultSelection.tier].depth
     : undefined;
   const calculations = useMemo(() => {
     if (storageSizeGB <= 0) return null;
@@ -199,15 +199,15 @@ const Upload: NextPage = () => {
     if (!slug) return 'Please enter a valid project name';
     if (!isValidProjectSlug(slug)) return 'Project name must contain at least one letter or number';
 
-    // Check for duplicate in selected reserve (skip check if updating existing project)
-    if (state.reserveSelection.type === 'existing' && !isUpdateMode) {
-      const reserve = getReserveData(state.reserveSelection.reserveIndex);
-      if (reserve?.projects.some(p => p.slug === slug)) {
-        return 'A project with this name already exists in this reserve';
+    // Check for duplicate in selected vault (skip check if updating existing project)
+    if (state.vaultSelection.type === 'existing' && !isUpdateMode) {
+      const vault = getVaultData(state.vaultSelection.vaultIndex);
+      if (vault?.projects.some(p => p.slug === slug)) {
+        return 'A project with this name already exists in this vault';
       }
     }
     return null;
-  }, [state.projectName, state.reserveSelection, isUpdateMode]);
+  }, [state.projectName, state.vaultSelection, isUpdateMode]);
 
   const canDeploy = state.projectName.length > 0 && !projectNameError && isConnected;
 
@@ -217,9 +217,9 @@ const Upload: NextPage = () => {
       files,
       totalSize,
       step: 'config',
-      // Don't reset reserve selection if in update mode
-      reserveSelection: isUpdateMode
-        ? prev.reserveSelection
+      // Don't reset vault selection if in update mode
+      vaultSelection: isUpdateMode
+        ? prev.vaultSelection
         : { type: 'new', tier: getRecommendedTier(totalSize) },
     }));
   };
@@ -256,16 +256,16 @@ const Upload: NextPage = () => {
         throw new Error('Failed to authenticate passkey wallet');
       }
 
-      let reserveIndex: number;
+      let vaultIndex: number;
       let stampId: string;
       let depth: number;
-      let reserveKey: { privateKey: string; address: string };
+      let vaultKey: { privateKey: string; address: string };
 
-      if (state.reserveSelection.type === 'new') {
-        // Creating new reserve
-        reserveIndex = depositCount ? Number(depositCount) : 0;
-        const tier = state.reserveSelection.tier;
-        depth = RESERVE_TIERS[tier].depth;
+      if (state.vaultSelection.type === 'new') {
+        // Creating new vault
+        vaultIndex = depositCount ? Number(depositCount) : 0;
+        const tier = state.vaultSelection.tier;
+        depth = VAULT_TIERS[tier].depth;
 
         // Calculate costs using selected tier's depth
         const tierCalc = calculate(storageSizeGB, state.totalSize, depth);
@@ -273,15 +273,15 @@ const Upload: NextPage = () => {
 
         const balancePerChunk = tierCalc.balancePerChunk;
 
-        reserveKey = deriveReserveKey(passkeyInfo.privateKey, reserveIndex);
+        vaultKey = deriveVaultKey(passkeyInfo.privateKey, vaultIndex);
 
-        // Calculate total xDAI needed
-        const totalXDAI = (tierCalc.initialStampCost + 0.01).toFixed(6);
+        // Calculate total xDAI needed (stamp cost + gas reserve for swap/approve/createBatch)
+        const totalXDAI = (tierCalc.initialStampCost + 0.02).toFixed(6);
 
         setCurrentAction('Creating postage stamp...');
 
-        const { batchId } = await createBatchWithReserveWallet({
-          reservePrivateKey: reserveKey.privateKey as `0x${string}`,
+        const { batchId } = await createBatchWithVaultWallet({
+          vaultPrivateKey: vaultKey.privateKey as `0x${string}`,
           totalXDAI,
           initialBalancePerChunk: balancePerChunk || BigInt(0),
           depth,
@@ -290,39 +290,39 @@ const Upload: NextPage = () => {
 
         stampId = batchId;
 
-        // Create reserve in local storage
-        createReserve(reserveIndex, tier);
+        // Create vault in local storage
+        createVault(vaultIndex, tier);
 
       } else {
-        // Using existing reserve
-        reserveIndex = state.reserveSelection.reserveIndex;
-        const reserve = getReserveData(reserveIndex);
-        if (!reserve) throw new Error('Reserve not found');
+        // Using existing vault
+        vaultIndex = state.vaultSelection.vaultIndex;
+        const vault = getVaultData(vaultIndex);
+        if (!vault) throw new Error('Vault not found');
 
         // Get stamp from contract
         const deposit = await publicClient?.readContract({
           address: POSTAGE_MANAGER_ADDRESS,
           abi: PostageManagerABI,
           functionName: 'getUserDeposit',
-          args: [address, BigInt(reserveIndex)],
+          args: [address, BigInt(vaultIndex)],
         }) as any;
 
-        if (!deposit?.stampId) throw new Error('No stamp found for reserve');
+        if (!deposit?.stampId) throw new Error('No stamp found for vault');
 
         stampId = deposit.stampId;
-        depth = reserve.depth;
-        reserveKey = deriveReserveKey(passkeyInfo.privateKey, reserveIndex);
+        depth = vault.depth;
+        vaultKey = deriveVaultKey(passkeyInfo.privateKey, vaultIndex);
       }
 
       // Step 2: Upload files
       setCurrentAction('Uploading files...');
-      setState(prev => ({ ...prev, batchId: stampId, reserveIndex }));
+      setState(prev => ({ ...prev, batchId: stampId, vaultIndex }));
 
       const normalizedStampId = stampId.replace(/^0x/, '');
       const uploadResult = await uploadWithStamper(
         state.files,
         normalizedStampId,
-        reserveKey.privateKey as `0x${string}`,
+        vaultKey.privateKey as `0x${string}`,
         depth,
         undefined,
         { isSPA: state.isSPA }
@@ -336,7 +336,7 @@ const Upload: NextPage = () => {
         setCurrentAction('Updating project feed...');
 
         await feedService.deployToProject(
-          reserveIndex,
+          vaultIndex,
           state.projectSlug,
           stampId,
           depth,
@@ -349,9 +349,9 @@ const Upload: NextPage = () => {
         // Create new project
         setCurrentAction('Creating project feed...');
 
-        const projectKey = deriveProjectKey(reserveKey.privateKey, state.projectSlug);
+        const projectKey = deriveProjectKey(vaultKey.privateKey, state.projectSlug);
 
-        // Add project to reserve first (manifestUrl will be updated by initializeProjectFeed)
+        // Add project to vault first (manifestUrl will be updated by initializeProjectFeed)
         const now = Date.now();
         const projectData = {
           slug: state.projectSlug,
@@ -363,11 +363,11 @@ const Upload: NextPage = () => {
           createdAt: now,
           updatedAt: now,
         };
-        addProject(reserveIndex, projectData);
+        addProject(vaultIndex, projectData);
 
         // Initialize the feed - this creates the SOC, manifest, and updates the project's manifestUrl
         manifestUrl = await feedService.initializeProjectFeed(
-          reserveIndex,
+          vaultIndex,
           state.projectSlug,
           stampId,
           depth,
@@ -404,27 +404,27 @@ const Upload: NextPage = () => {
         step: 'complete',
         swarmUrl: manifestUrl, // Use the feed URL (stable, updatable) instead of static upload URL
         swarmReference: uploadResult.reference,
-        reserveIndex,
+        vaultIndex,
       }));
 
-      // Refresh reserves list
-      setReserves(getAllReserves());
+      // Refresh vaults list
+      setVaults(getAllVaults());
 
     } catch (err) {
       console.error('Deployment failed:', err);
       const errorMessage = err instanceof Error ? err.message : 'Deployment failed';
 
-      // Check if this is a stale reserve error (reserve exists in localStorage but not on-chain)
-      if (errorMessage.includes('InvalidDepositIndex') && state.reserveSelection.type === 'existing') {
-        const staleIndex = state.reserveSelection.reserveIndex;
-        console.log(`Cleaning up stale reserve #${staleIndex}`);
-        deleteReserve(staleIndex);
-        setReserves(getAllReserves());
-        setDeployError(`Reserve #${staleIndex} no longer exists on-chain and has been removed. Please select a different option.`);
+      // Check if this is a stale vault error (vault exists in localStorage but not on-chain)
+      if (errorMessage.includes('InvalidDepositIndex') && state.vaultSelection.type === 'existing') {
+        const staleIndex = state.vaultSelection.vaultIndex;
+        console.log(`Cleaning up stale vault #${staleIndex}`);
+        deleteVault(staleIndex);
+        setVaults(getAllVaults());
+        setDeployError(`Vault #${staleIndex} no longer exists on-chain and has been removed. Please select a different option.`);
         setState(prev => ({
           ...prev,
           step: 'config',
-          reserveSelection: { type: 'new', tier: recommendedTier },
+          vaultSelection: { type: 'new', tier: recommendedTier },
         }));
       } else {
         setDeployError(errorMessage);
@@ -433,15 +433,26 @@ const Upload: NextPage = () => {
     }
   };
 
-  const handleReset = () => {
-    setState({
-      files: [],
-      totalSize: 0,
-      step: 'drop',
-      projectName: '',
-      projectSlug: '',
-      reserveSelection: { type: 'new', tier: 'standard' },
-      isSPA: false,
+  const handleReset = (preserveContext = false) => {
+    setState(prev => {
+      // Determine vault selection for next deploy
+      let nextVaultSelection: VaultSelection = { type: 'new', tier: 'standard' };
+
+      if (preserveContext && prev.vaultIndex !== undefined) {
+        // Use the vault from the just-completed deploy (works for both new and existing vaults)
+        nextVaultSelection = { type: 'existing', vaultIndex: prev.vaultIndex };
+      }
+
+      return {
+        files: [],
+        totalSize: 0,
+        step: 'drop',
+        // Keep project name/slug if preserving context (for repeated updates)
+        projectName: preserveContext ? prev.projectName : '',
+        projectSlug: preserveContext ? prev.projectSlug : '',
+        vaultSelection: nextVaultSelection,
+        isSPA: false,
+      };
     });
     resetUpload();
     setCurrentAction('');
@@ -468,8 +479,8 @@ const Upload: NextPage = () => {
     uploadProgress.phase === 'chunking' || uploadProgress.phase === 'stamping' || uploadProgress.phase === 'uploading';
 
   // Get tier info for display
-  const selectedTierInfo = state.reserveSelection.type === 'new'
-    ? RESERVE_TIERS[state.reserveSelection.tier]
+  const selectedTierInfo = state.vaultSelection.type === 'new'
+    ? VAULT_TIERS[state.vaultSelection.tier]
     : null;
 
   return (
@@ -538,31 +549,31 @@ const Upload: NextPage = () => {
                 )}
               </div>
 
-              {/* Reserve Selection */}
+              {/* Vault Selection */}
               <div className={styles.configSection}>
                 <label className={styles.configLabel}>
-                  {isUpdateMode ? 'Updating in reserve' : 'Where should this project live?'}
+                  {isUpdateMode ? 'Updating in vault' : 'Where should this project live?'}
                 </label>
-                {isUpdateMode && existingReserve && existingReserveId !== undefined ? (
-                  <ReserveCard
-                    reserveIndex={existingReserveId}
-                    tier={existingReserve.tier}
+                {isUpdateMode && existingVault && existingVaultId !== undefined ? (
+                  <VaultCard
+                    vaultIndex={existingVaultId}
+                    tier={existingVault.tier}
                     createdAt={existingDeposit ? Number((existingDeposit as any).depositTime) * 1000 : undefined}
                     batchId={existingStampId || ''}
                   />
                 ) : (
-                  <ReserveSelector
-                    reserves={reserves}
-                    selection={state.reserveSelection}
-                    onSelectionChange={(selection) => setState(prev => ({ ...prev, reserveSelection: selection }))}
+                  <VaultSelector
+                    vaults={vaults}
+                    selection={state.vaultSelection}
+                    onSelectionChange={(selection) => setState(prev => ({ ...prev, vaultSelection: selection }))}
                     recommendedTier={recommendedTier}
                     disabled={isProcessing}
                   />
                 )}
               </div>
 
-              {/* Cost Summary (only for new reserves) */}
-              {state.reserveSelection.type === 'new' && calculations && (
+              {/* Cost Summary (only for new vaults) */}
+              {state.vaultSelection.type === 'new' && calculations && (
                 <div className={styles.reviewCosts}>
                   <h3>Cost Estimate</h3>
                   <div className={styles.costLine}>
@@ -570,11 +581,11 @@ const Upload: NextPage = () => {
                     <span>~{formatSmartNumber(calculations.initialStampCost)} xDAI</span>
                   </div>
                   <div className={styles.costLine}>
-                    <span>Reserve funding (optional)</span>
+                    <span>Vault funding (optional)</span>
                     <span>~{formatSmartNumber(calculations.recommendedReserve)} DAI</span>
                   </div>
                   <div className={styles.costNote}>
-                    Stamp gets you online for ~7 days. Fund a reserve to stay online permanently via yield.
+                    Stamp gets you online for ~7 days. Fund a vault to stay online permanently via yield.
                   </div>
                 </div>
               )}
@@ -674,7 +685,7 @@ const Upload: NextPage = () => {
               {uploadError && (
                 <div className={styles.error}>
                   <p>Error: {uploadError.message}</p>
-                  <button onClick={handleReset} className={styles.secondaryButton}>
+                  <button onClick={() => handleReset()} className={styles.secondaryButton}>
                     Start Over
                   </button>
                 </div>
@@ -710,9 +721,9 @@ const Upload: NextPage = () => {
                     <div className={styles.projectHeader}>
                       <div className={styles.projectTitle}>
                         <span className={styles.projectName}>{state.projectName}</span>
-                        {state.reserveIndex !== undefined && (
-                          <span className={styles.reserveLink}>
-                            Reserve #{state.reserveIndex}
+                        {state.vaultIndex !== undefined && (
+                          <span className={styles.vaultLink}>
+                            Vault #{state.vaultIndex}
                           </span>
                         )}
                       </div>
@@ -741,40 +752,40 @@ const Upload: NextPage = () => {
 
                     {/* Main Actions */}
                     <div className={styles.completeActions}>
-                      {state.reserveSelection.type === 'existing' && state.reserveIndex !== undefined ? (
+                      {state.vaultSelection.type === 'existing' && state.vaultIndex !== undefined ? (
                         <>
                           <button
-                            onClick={() => router.push('/reserves')}
+                            onClick={() => router.push('/vaults')}
                             className={styles.ctaButton}
                           >
-                            Back to Reserves
+                            Back to Vaults
                           </button>
                           <button
-                            onClick={handleReset}
+                            onClick={() => handleReset(true)}
                             className={styles.secondaryButton}
                           >
                             Deploy Another
                           </button>
                         </>
                       ) : (
-                        /* Fund Reserve CTA for new batch */
+                        /* Fund Vault CTA for new batch */
                         calculations && (
                           <>
                             <button
                               onClick={() => {
                                 router.push(
-                                  `/reserves?stampId=${state.batchId}&contentHash=${state.swarmReference}`
+                                  `/vaults?stampId=${state.batchId}&contentHash=${state.swarmReference}`
                                 );
                               }}
                               className={styles.ctaButton}
                             >
-                              Fund Reserve (~{formatSmartNumber(calculations.recommendedReserve)} DAI)
+                              Fund Vault (~{formatSmartNumber(calculations.recommendedReserve)} DAI)
                             </button>
                             <p className={styles.fundNote}>
-                              Keep it online permanently with yield-generating reserves
+                              Keep it online permanently with yield-generating vaults
                             </p>
                             <button
-                              onClick={handleReset}
+                              onClick={() => handleReset(true)}
                               className={styles.secondaryButton}
                             >
                               Deploy Another
@@ -802,7 +813,7 @@ const Upload: NextPage = () => {
           <div className={styles.featureItem}>
             <h3>Fund with yield</h3>
             <p>
-              Your reserve deposit earns yield that automatically pays for
+              Your vault deposit earns yield that automatically pays for
               storage. No subscriptions, no renewals, no monthly bills.
             </p>
           </div>

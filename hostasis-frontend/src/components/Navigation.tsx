@@ -23,11 +23,11 @@ export default function Navigation() {
             <Link href="/" className="nav-menu-item">
               Home
             </Link>
+            <Link href="/vaults" className="nav-menu-item">
+              Vaults
+            </Link>
             <Link href="/upload" className="nav-menu-item">
               Upload
-            </Link>
-            <Link href="/reserves" className="nav-menu-item">
-              Reserves
             </Link>
             <Link href="/stats" className="nav-menu-item">
               Stats
@@ -92,8 +92,8 @@ export default function Navigation() {
           <Link href="/upload" className="nav-mobile-item" onClick={() => setMobileMenuOpen(false)}>
             Upload
           </Link>
-          <Link href="/reserves" className="nav-mobile-item" onClick={() => setMobileMenuOpen(false)}>
-            Reserves
+          <Link href="/vaults" className="nav-mobile-item" onClick={() => setMobileMenuOpen(false)}>
+            Vaults
           </Link>
           <a
             href="https://github.com/o8-is/hostasis/blob/main/README.md"

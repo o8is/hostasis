@@ -2,7 +2,7 @@ import { keccak_256 } from '@noble/hashes/sha3';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { type Hex } from 'viem';
 
-export interface ReserveKeyInfo {
+export interface VaultKeyInfo {
   privateKey: Hex;
   address: Hex;
 }
@@ -30,50 +30,50 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 /**
- * Derive a reserve key from passkey private key and reserve index.
+ * Derive a vault key from passkey private key and vault index.
  *
  * This key is used for BOTH:
  * - Creating and owning the postage batch (batch owner)
  * - Signing feed updates (feed owner)
  *
- * Formula: reservePrivateKey = keccak256(passkeyPrivateKey || reserveIndex)
+ * Formula: vaultPrivateKey = keccak256(passkeyPrivateKey || vaultIndex)
  *
- * This creates a unique, deterministic key for each reserve that:
+ * This creates a unique, deterministic key for each vault that:
  * - Is recoverable if the user has access to their passkey
- * - Is unique per reserve (no collisions)
+ * - Is unique per vault (no collisions)
  * - Requires no additional storage (can be derived on demand)
  * - Is safe to export for CLI/CI/CD use (doesn't reveal master passkey)
- * - Is scoped to a single reserve (can't affect other reserves)
+ * - Is scoped to a single vault (can't affect other vaults)
  *
  * @param passkeyPrivateKey - The user's passkey-derived private key (hex)
- * @param reserveIndex - The reserve index (deposit index from contract)
- * @returns ReserveKeyInfo with privateKey and address
+ * @param vaultIndex - The vault index (deposit index from contract)
+ * @returns VaultKeyInfo with privateKey and address
  */
-export function deriveReserveKey(passkeyPrivateKey: Hex, reserveIndex: number): ReserveKeyInfo {
+export function deriveVaultKey(passkeyPrivateKey: Hex, vaultIndex: number): VaultKeyInfo {
   // Convert passkey private key to bytes
   const passkeyBytes = hexToBytes(passkeyPrivateKey);
 
-  // Convert reserve index to 4 bytes (big-endian)
+  // Convert vault index to 4 bytes (big-endian)
   const indexBytes = new Uint8Array(4);
-  new DataView(indexBytes.buffer).setUint32(0, reserveIndex, false); // big-endian
+  new DataView(indexBytes.buffer).setUint32(0, vaultIndex, false); // big-endian
 
-  // Combine: passkeyPrivateKey || reserveIndex
+  // Combine: passkeyPrivateKey || vaultIndex
   const combined = new Uint8Array(passkeyBytes.length + indexBytes.length);
   combined.set(passkeyBytes);
   combined.set(indexBytes, passkeyBytes.length);
 
-  // Derive reserve private key via keccak256
-  const reservePrivateKeyBytes = keccak_256(combined);
+  // Derive vault private key via keccak256
+  const vaultPrivateKeyBytes = keccak_256(combined);
 
   // Get uncompressed public key (65 bytes: 0x04 prefix + 64 bytes)
-  const publicKeyBytes = secp256k1.getPublicKey(reservePrivateKeyBytes, false);
+  const publicKeyBytes = secp256k1.getPublicKey(vaultPrivateKeyBytes, false);
 
   // Derive Ethereum address: last 20 bytes of keccak256(publicKey without 0x04 prefix)
   const publicKeyHash = keccak_256(publicKeyBytes.slice(1));
   const addressBytes = publicKeyHash.slice(-20);
 
   return {
-    privateKey: `0x${bytesToHex(reservePrivateKeyBytes)}` as Hex,
+    privateKey: `0x${bytesToHex(vaultPrivateKeyBytes)}` as Hex,
     address: `0x${bytesToHex(addressBytes)}` as Hex,
   };
 }

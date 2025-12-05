@@ -1,33 +1,53 @@
-import { useState, useEffect } from 'react';
-import Modal from './Modal';
-import { CopyButton } from './CopyButton';
-import { useFeedService } from '../hooks/useFeedService';
-import styles from './ExportKeyModal.module.css';
+import { useState, useEffect } from "react";
+import { useAccount, useReadContract } from "wagmi";
+import Modal from "./Modal";
+import { CopyButton } from "./CopyButton";
+import { useFeedService } from "../hooks/useFeedService";
+import { POSTAGE_MANAGER_ADDRESS } from "../contracts/addresses";
+import PostageManagerABI from "../contracts/abis/PostageYieldManager.json";
+import styles from "./ExportKeyModal.module.css";
 
 interface ExportKeyModalProps {
-  reserveIndex: number;
-  /** If provided, exports project key instead of reserve key */
+  vaultIndex: number;
+  /** If provided, exports project key instead of vault key */
   projectSlug?: string;
   projectName?: string;
   onClose: () => void;
 }
 
 export default function ExportKeyModal({
-  reserveIndex,
+  vaultIndex,
   projectSlug,
   projectName,
   onClose,
 }: ExportKeyModalProps) {
+  const { address } = useAccount();
   const feedService = useFeedService();
-  const [keyInfo, setKeyInfo] = useState<{ privateKey: string; address: string } | null>(null);
+  const [keyInfo, setKeyInfo] = useState<{
+    privateKey: string;
+    address: string;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [hasAttempted, setHasAttempted] = useState(false);
 
-  // Determine if we're exporting a project key or reserve key
+  // Fetch deposit data to get batchId
+  const { data: deposit } = useReadContract({
+    address: POSTAGE_MANAGER_ADDRESS,
+    abi: PostageManagerABI,
+    functionName: "getUserDeposit",
+    args: address ? [address, BigInt(vaultIndex)] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  });
+
+  const batchId = (deposit as any)?.stampId as string | undefined;
+
+  // Determine if we're exporting a project key or vault key
   const isProjectKey = Boolean(projectSlug);
-  const keyType = isProjectKey ? 'Project' : 'Reserve';
+  const keyType = isProjectKey ? "Project" : "Vault";
 
   useEffect(() => {
     // Only attempt once to prevent infinite loops
@@ -39,10 +59,10 @@ export default function ExportKeyModal({
         setIsLoading(true);
         setError(null);
 
-        // Export project key or reserve key based on props
+        // Export project key or vault key based on props
         const info = isProjectKey
-          ? await feedService.exportProjectKey(reserveIndex, projectSlug!)
-          : await feedService.exportFeedKey(reserveIndex);
+          ? await feedService.exportProjectKey(vaultIndex, projectSlug!)
+          : await feedService.exportFeedKey(vaultIndex);
 
         setKeyInfo({
           privateKey: info.privateKey,
@@ -50,19 +70,30 @@ export default function ExportKeyModal({
         });
       } catch (err) {
         console.error(`Failed to export ${keyType.toLowerCase()} key:`, err);
-        setError(err instanceof Error ? err.message : `Failed to export ${keyType.toLowerCase()} key`);
+        setError(
+          err instanceof Error
+            ? err.message
+            : `Failed to export ${keyType.toLowerCase()} key`
+        );
       } finally {
         setIsLoading(false);
       }
     };
 
     exportKey();
-  }, [hasAttempted, feedService, reserveIndex, projectSlug, isProjectKey, keyType]);
+  }, [
+    hasAttempted,
+    feedService,
+    vaultIndex,
+    projectSlug,
+    isProjectKey,
+    keyType,
+  ]);
 
   // Generate modal title
   const modalTitle = isProjectKey
     ? `Export Key: ${projectName || projectSlug}`
-    : 'Export Reserve Key';
+    : "Export Vault Key";
 
   return (
     <Modal title={modalTitle} onClose={onClose}>
@@ -88,28 +119,11 @@ export default function ExportKeyModal({
 
         {keyInfo && (
           <>
-            <p className={styles.description}>
-              {isProjectKey ? (
-                <>
-                  This key can update the feed for <strong>{projectName || projectSlug}</strong>.
-                  <br />
-                  Use it in CI/CD pipelines with the Hostasis CLI to deploy updates.
-                </>
-              ) : (
-                <>
-                  This key owns your reserve&apos;s batch and can upload files and update feeds.
-                  <br />
-                  Use it in CI/CD pipelines or with the Hostasis CLI.
-                </>
-              )}
-              <strong> Keep it secret!</strong>
-            </p>
-
-            <div className={styles.field}>
-              <label className={styles.fieldLabel}>{keyType} Address</label>
+          <div className={styles.field}>
+              <label className={styles.fieldLabel}>Batch ID</label>
               <div className={styles.fieldValue}>
-                <code className={styles.code}>{keyInfo.address}</code>
-                <CopyButton text={keyInfo.address} label="Address" />
+                <code className={styles.code}>{batchId || "Loading..."}</code>
+                {batchId && <CopyButton text={batchId} label="Batch ID" />}
               </div>
             </div>
 
@@ -119,13 +133,15 @@ export default function ExportKeyModal({
                 {showPrivateKey ? (
                   <code className={styles.code}>{keyInfo.privateKey}</code>
                 ) : (
-                  <code className={styles.code}>••••••••••••••••••••••••••••••••</code>
+                  <code className={styles.code}>
+                    ••••••••••••••••••••••••••••••••
+                  </code>
                 )}
                 <button
                   className={styles.toggleButton}
                   onClick={() => setShowPrivateKey(!showPrivateKey)}
                 >
-                  {showPrivateKey ? 'Hide' : 'Show'}
+                  {showPrivateKey ? "Hide" : "Show"}
                 </button>
                 <CopyButton text={keyInfo.privateKey} label="Key" />
               </div>
@@ -134,34 +150,25 @@ export default function ExportKeyModal({
             <div className={styles.warning}>
               <strong>⚠️ Security Warning</strong>
               <p>
-                {isProjectKey
-                  ? `This key can update the ${projectName || projectSlug} feed. Anyone with this key can modify your site.`
-                  : 'This key can upload to your batch and update your feeds. Anyone with this key can modify your sites.'}
-                {' '}Store it securely as a secret in your CI/CD system.
+                This key can upload to your vault and update your feeds. Anyone
+                with this key can modify your sites. Store it securely as a
+                secret in your CI/CD system.
               </p>
             </div>
 
             <div className={styles.usage}>
               <label className={styles.fieldLabel}>Example Usage</label>
-              <pre className={styles.codeBlock}>
-{isProjectKey
-  ? `# Deploy to project with Hostasis CLI
-hostasis deploy ./dist \\
-  --reserve-key=<your-reserve-key> \\
-  --project=${projectSlug}
+              <pre className={styles.codeBlock}>{`hostasis upload ./<directory> \\
+  --project=<name> \\
+  --batch-id ${batchId} \\
+  --key ${keyInfo.privateKey} \\
+  --feed
 
-# Or export as environment variable
-export HOSTASIS_PROJECT_KEY="${keyInfo.privateKey}"
-hostasis deploy ./dist --project=${projectSlug}`
-  : `# Upload and update feed with Hostasis CLI
-export HOSTASIS_RESERVE_KEY="${keyInfo.privateKey}"
-
-# Upload files
-hostasis upload ./dist --batch-id <your-batch-id>
-
-# Update feed
-hostasis feed update --reference <swarm-hash>`}
-              </pre>
+# Or with environment variables
+export HOSTASIS_PROJECT="<name>"
+export HOSTASIS_BATCH_ID="${batchId}"
+export HOSTASIS_PRIVATE_KEY="${keyInfo.privateKey}"
+hostasis upload ./<directory> --feed`}</pre>
             </div>
           </>
         )}

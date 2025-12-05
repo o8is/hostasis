@@ -5,7 +5,7 @@
 }
 
 .option,
-.reserveOption {
+.vaultOption {
   padding: 1rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -15,31 +15,31 @@
 }
 
 .option:hover,
-.reserveOption:hover {
+.vaultOption:hover {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.2);
 }
 
 .option.selected,
-.reserveOption.selected {
+.vaultOption.selected {
   background: rgba(74, 158, 255, 0.08);
   border-color: #4a9eff;
 }
 
 .option.disabled,
-.reserveOption.disabled {
+.vaultOption.disabled {
   cursor: not-allowed;
   pointer-events: none;
 }
 
 .option.disabled:hover,
-.reserveOption.disabled:hover {
+.vaultOption.disabled:hover {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Keep selected state visible when disabled */
-.reserveOption.selected.disabled {
+.vaultOption.selected.disabled {
   background: rgba(74, 158, 255, 0.08);
   border-color: #4a9eff;
   opacity: 0.85;
@@ -95,7 +95,7 @@
   padding-left: 0.25rem;
 }
 
-.reserveDetails {
+.vaultDetails {
   margin-top: 0.75rem;
   margin-left: 2rem;
 }

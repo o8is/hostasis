@@ -1,8 +1,8 @@
 /**
- * Project and Reserve Storage
+ * Project and Vault Storage
  *
- * Manages localStorage storage for reserves and their projects.
- * Reserves are capacity tiers, projects are sites within them.
+ * Manages localStorage storage for vaults and their projects.
+ * Vaults are capacity tiers, projects are sites within them.
  */
 
 import { normalizeProjectSlug, isValidProjectSlug } from '@hostasis/swarm-stamper';
@@ -11,9 +11,9 @@ import { normalizeProjectSlug, isValidProjectSlug } from '@hostasis/swarm-stampe
 export { normalizeProjectSlug, isValidProjectSlug };
 
 /**
- * Reserve tier definitions
+ * Vault tier definitions
  */
-export const RESERVE_TIERS = {
+export const VAULT_TIERS = {
   starter: {
     name: 'Starter',
     depth: 18,
@@ -44,22 +44,22 @@ export const RESERVE_TIERS = {
   },
 } as const;
 
-export type ReserveTier = keyof typeof RESERVE_TIERS;
+export type VaultTier = keyof typeof VAULT_TIERS;
 
 /**
  * Get the recommended tier based on file size
  */
-export function getRecommendedTier(fileSizeBytes: number): ReserveTier {
+export function getRecommendedTier(fileSizeBytes: number): VaultTier {
   // Add 20% buffer for manifest overhead
   const requiredBytes = fileSizeBytes * 1.2;
 
-  if (requiredBytes <= RESERVE_TIERS.starter.capacityBytes) {
+  if (requiredBytes <= VAULT_TIERS.starter.capacityBytes) {
     return 'starter';
   }
-  if (requiredBytes <= RESERVE_TIERS.basic.capacityBytes) {
+  if (requiredBytes <= VAULT_TIERS.basic.capacityBytes) {
     return 'basic';
   }
-  if (requiredBytes <= RESERVE_TIERS.standard.capacityBytes) {
+  if (requiredBytes <= VAULT_TIERS.standard.capacityBytes) {
     return 'standard';
   }
   return 'pro';
@@ -71,7 +71,7 @@ export function getRecommendedTier(fileSizeBytes: number): ReserveTier {
 export interface ProjectData {
   slug: string;               // Immutable, used for key derivation
   displayName: string;        // User-facing name (can change)
-  reserveIndex: number;       // Parent reserve index
+  vaultIndex: number;         // Parent vault index
   feedOwnerAddress: string;   // Derived from project key
   manifestUrl: string;        // Stable feed manifest URL
   manifestReference?: string; // Feed manifest reference hash
@@ -82,88 +82,88 @@ export interface ProjectData {
 }
 
 /**
- * Reserve data stored per reserve
+ * Vault data stored per vault
  */
-export interface ReserveData {
-  reserveIndex: number;
-  tier: ReserveTier;
+export interface VaultData {
+  vaultIndex: number;
+  tier: VaultTier;
   depth: number;
   projects: ProjectData[];
   createdAt: number;
   updatedAt: number;
 }
 
-const STORAGE_PREFIX = 'hostasis_reserve_';
+const STORAGE_PREFIX = 'hostasis_vault_';
 
 /**
- * Get storage key for a reserve
+ * Get storage key for a vault
  */
-function getStorageKey(reserveIndex: number): string {
-  return `${STORAGE_PREFIX}${reserveIndex}`;
+function getStorageKey(vaultIndex: number): string {
+  return `${STORAGE_PREFIX}${vaultIndex}`;
 }
 
 /**
- * Get reserve data from localStorage
+ * Get vault data from localStorage
  */
-export function getReserveData(reserveIndex: number): ReserveData | null {
+export function getVaultData(vaultIndex: number): VaultData | null {
   if (typeof window === 'undefined') return null;
 
-  const key = getStorageKey(reserveIndex);
+  const key = getStorageKey(vaultIndex);
   const data = localStorage.getItem(key);
   if (!data) return null;
 
   try {
-    return JSON.parse(data) as ReserveData;
+    return JSON.parse(data) as VaultData;
   } catch {
     return null;
   }
 }
 
 /**
- * Save reserve data to localStorage
+ * Save vault data to localStorage
  */
-export function setReserveData(reserveIndex: number, data: ReserveData): void {
+export function setVaultData(vaultIndex: number, data: VaultData): void {
   if (typeof window === 'undefined') return;
 
-  const key = getStorageKey(reserveIndex);
+  const key = getStorageKey(vaultIndex);
   localStorage.setItem(key, JSON.stringify(data));
 }
 
 /**
- * Delete a reserve from localStorage
+ * Delete a vault from localStorage
  */
-export function deleteReserve(reserveIndex: number): void {
+export function deleteVault(vaultIndex: number): void {
   if (typeof window === 'undefined') return;
 
-  const key = getStorageKey(reserveIndex);
+  const key = getStorageKey(vaultIndex);
   localStorage.removeItem(key);
 }
 
 /**
- * Create a new reserve
+ * Create a new vault
  */
-export function createReserve(reserveIndex: number, tier: ReserveTier): ReserveData {
+export function createVault(vaultIndex: number, tier: VaultTier): VaultData {
   const now = Date.now();
-  const reserve: ReserveData = {
-    reserveIndex,
+  const vault: VaultData = {
+    vaultIndex,
     tier,
-    depth: RESERVE_TIERS[tier].depth,
+    depth: VAULT_TIERS[tier].depth,
     projects: [],
     createdAt: now,
     updatedAt: now,
   };
 
-  setReserveData(reserveIndex, reserve);
-  return reserve;
+  setVaultData(vaultIndex, vault);
+  return vault;
 }
 
 /**
- * Get all reserves from localStorage
+ * Get all vaults from localStorage
  */
-export function getAllReserves(): ReserveData[] {
+export function getAllVaults(): VaultData[] {
   if (typeof window === 'undefined') return [];
 
-  const reserves: ReserveData[] = [];
+  const vaults: VaultData[] = [];
 
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -171,7 +171,7 @@ export function getAllReserves(): ReserveData[] {
       const data = localStorage.getItem(key);
       if (data) {
         try {
-          reserves.push(JSON.parse(data) as ReserveData);
+          vaults.push(JSON.parse(data) as VaultData);
         } catch {
           // Skip invalid data
         }
@@ -179,74 +179,74 @@ export function getAllReserves(): ReserveData[] {
     }
   }
 
-  return reserves.sort((a, b) => a.reserveIndex - b.reserveIndex);
+  return vaults.sort((a, b) => a.vaultIndex - b.vaultIndex);
 }
 
 /**
- * Get a project by slug from a reserve
+ * Get a project by slug from a vault
  */
-export function getProject(reserveIndex: number, slug: string): ProjectData | null {
-  const reserve = getReserveData(reserveIndex);
-  if (!reserve) return null;
+export function getProject(vaultIndex: number, slug: string): ProjectData | null {
+  const vault = getVaultData(vaultIndex);
+  if (!vault) return null;
 
-  return reserve.projects.find(p => p.slug === slug) || null;
+  return vault.projects.find(p => p.slug === slug) || null;
 }
 
 /**
- * Add a project to a reserve
+ * Add a project to a vault
  */
-export function addProject(reserveIndex: number, project: Omit<ProjectData, 'reserveIndex'>): ProjectData {
-  let reserve = getReserveData(reserveIndex);
-  if (!reserve) {
-    throw new Error(`Reserve ${reserveIndex} not found`);
+export function addProject(vaultIndex: number, project: Omit<ProjectData, 'vaultIndex'>): ProjectData {
+  let vault = getVaultData(vaultIndex);
+  if (!vault) {
+    throw new Error(`Vault ${vaultIndex} not found`);
   }
 
   // Check for duplicate slug
-  if (reserve.projects.some(p => p.slug === project.slug)) {
-    throw new Error(`Project with slug "${project.slug}" already exists in reserve ${reserveIndex}`);
+  if (vault.projects.some(p => p.slug === project.slug)) {
+    throw new Error(`Project with slug "${project.slug}" already exists in vault ${vaultIndex}`);
   }
 
   const fullProject: ProjectData = {
     ...project,
-    reserveIndex,
+    vaultIndex,
   };
 
-  reserve.projects.push(fullProject);
-  reserve.updatedAt = Date.now();
-  setReserveData(reserveIndex, reserve);
+  vault.projects.push(fullProject);
+  vault.updatedAt = Date.now();
+  setVaultData(vaultIndex, vault);
 
   return fullProject;
 }
 
 /**
- * Update a project in a reserve
+ * Update a project in a vault
  */
 export function updateProject(
-  reserveIndex: number,
+  vaultIndex: number,
   slug: string,
-  updates: Partial<Omit<ProjectData, 'slug' | 'reserveIndex'>>
+  updates: Partial<Omit<ProjectData, 'slug' | 'vaultIndex'>>
 ): ProjectData | null {
-  const reserve = getReserveData(reserveIndex);
-  if (!reserve) return null;
+  const vault = getVaultData(vaultIndex);
+  if (!vault) return null;
 
-  const projectIndex = reserve.projects.findIndex(p => p.slug === slug);
+  const projectIndex = vault.projects.findIndex(p => p.slug === slug);
   if (projectIndex === -1) return null;
 
-  reserve.projects[projectIndex] = {
-    ...reserve.projects[projectIndex],
+  vault.projects[projectIndex] = {
+    ...vault.projects[projectIndex],
     ...updates,
     updatedAt: Date.now(),
   };
-  reserve.updatedAt = Date.now();
-  setReserveData(reserveIndex, reserve);
+  vault.updatedAt = Date.now();
+  setVaultData(vaultIndex, vault);
 
-  return reserve.projects[projectIndex];
+  return vault.projects[projectIndex];
 }
 
 /**
- * Calculate total used capacity of a reserve
+ * Calculate total used capacity of a vault
  */
-export function getReserveUsedCapacity(reserve: ReserveData): number {
+export function getVaultUsedCapacity(vault: VaultData): number {
   // This is a rough estimate - we'd need to track actual uploaded bytes per project
   // For now, return 0 as placeholder
   return 0;

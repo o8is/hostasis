@@ -564,7 +564,7 @@
   color: #e0e0e0;
 }
 
-.reserveLink {
+.vaultLink {
   font-size: 0.85rem;
   color: #7a7a7a;
 }
@@ -743,7 +743,7 @@
   text-decoration: underline;
 }
 
-.reservePrompt {
+.vaultPrompt {
   background: rgba(255, 183, 74, 0.1);
   border: 2px solid var(--o8-tertiary);
   border-radius: 12px;
@@ -753,25 +753,25 @@
   width: 100%;
 }
 
-.reserveMessage {
+.vaultMessage {
   margin: 0 0 1.5rem;
   color: #e0e0e0;
   font-size: 1rem;
   line-height: 1.6;
 }
 
-.reserveMessage strong {
+.vaultMessage strong {
   color: var(--o8-tertiary);
   display: block;
   margin-bottom: 0.75rem;
   font-size: 1.2rem;
 }
 
-.reservePrompt button {
+.vaultPrompt button {
   margin-top: 0.5rem;
 }
 
-.reservePrompt .skipNote {
+.vaultPrompt .skipNote {
   margin-top: 1.25rem;
 }
 
@@ -822,15 +822,15 @@
     gap: 1.25rem;
   }
 
-  .reservePrompt {
+  .vaultPrompt {
     padding: 1.5rem;
   }
 
-  .reserveMessage {
+  .vaultMessage {
     font-size: 0.9rem;
   }
 
-  .reserveMessage strong {
+  .vaultMessage strong {
     font-size: 1.1rem;
   }
 }

@@ -120,11 +120,11 @@ export function makeSOCAddress(identifier: Uint8Array, owner: Uint8Array): Uint8
 }
 
 export interface WriteFeedUpdateOptions {
-  /** Reserve private key (hex string, with or without 0x prefix) - used for stamping */
-  reservePrivateKey: string;
+  /** Vault private key (hex string, with or without 0x prefix) - used for stamping */
+  vaultPrivateKey: string;
   /**
    * Signer private key (hex string, with or without 0x prefix) - used for SOC signing.
-   * If not provided, reservePrivateKey is used for both signing and stamping.
+   * If not provided, vaultPrivateKey is used for both signing and stamping.
    * Use this when the feed owner is different from the batch owner (multi-project support).
    */
   signerPrivateKey?: string;
@@ -156,7 +156,7 @@ export interface WriteFeedUpdateOptions {
  */
 export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<void> {
   const {
-    reservePrivateKey,
+    vaultPrivateKey,
     signerPrivateKey,
     contentReference,
     feedIndex,
@@ -166,8 +166,8 @@ export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<
     topic = new Uint8Array(32) // NULL_TOPIC by default
   } = options;
 
-  // Use signerPrivateKey for SOC owner/signing if provided, otherwise use reservePrivateKey
-  const socPrivateKey = signerPrivateKey || reservePrivateKey;
+  // Use signerPrivateKey for SOC owner/signing if provided, otherwise use vaultPrivateKey
+  const socPrivateKey = signerPrivateKey || vaultPrivateKey;
   const owner = getAddressFromPrivateKey(socPrivateKey);
   const identifier = makeFeedIdentifier(topic, feedIndex);
 
@@ -207,9 +207,9 @@ export async function writeFeedUpdate(options: WriteFeedUpdateOptions): Promise<
   // Calculate SOC address for stamping
   const socAddress = makeSOCAddress(identifier, owner);
 
-  // Stamp the SOC using the reserve key (batch owner)
+  // Stamp the SOC using the vault key (batch owner)
   const normalizedBatchId = batchId.replace(/^0x/, '');
-  const stampPrivateKey = reservePrivateKey.replace(/^0x/, '');
+  const stampPrivateKey = vaultPrivateKey.replace(/^0x/, '');
   const stamper = Stamper.fromBlank(stampPrivateKey, normalizedBatchId, depth);
 
   // Create a mock chunk for stamping

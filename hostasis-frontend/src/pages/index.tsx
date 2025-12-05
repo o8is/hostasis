@@ -33,7 +33,7 @@ const Home: NextPage = () => {
             Your storage is paid for by yield - permanently.
           </p>
           <p className="hero-description">
-            Reserve your storage with any supported asset. Your reserve earns yield. Hostasis converts that yield into Swarm storage so your files stay online forever - no subscriptions, no monthly bills.
+            Deposit into your vault with any supported asset. Your vault earns yield. Hostasis converts that yield into Swarm storage so your files stay online forever - no subscriptions, no monthly bills.
           </p>
         </div>
 

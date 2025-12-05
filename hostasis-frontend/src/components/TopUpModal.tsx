@@ -127,7 +127,7 @@ export default function TopUpModal({
   const isValidAmount = amount && parseFloat(amount) > 0;
 
   return (
-    <Modal title={`Top Up Reserve #${depositIndex}`} onClose={onClose}>
+    <Modal title={`Top Up Vault #${depositIndex}`} onClose={onClose}>
       {depositData && (
         <p className="description">
           Current: <TokenAmount value={depositData.sDAIAmount} symbol="sDAI" />

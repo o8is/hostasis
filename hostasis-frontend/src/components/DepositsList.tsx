@@ -7,7 +7,7 @@ import UpdateStampModal from './UpdateStampModal';
 import TopUpModal from './TopUpModal';
 import ExportKeyModal from './ExportKeyModal';
 import DepositCard from './DepositCard';
-import EmptyReservesState from './EmptyReservesState';
+import EmptyVaultsState from './EmptyVaultsState';
 
 import styles from './DepositsList.module.css';
 
@@ -64,10 +64,10 @@ export default function DepositsList({ onCreateClick, initialAmount }: DepositsL
       <div>
         {showEmptyState ? (
           onCreateClick ? (
-            <EmptyReservesState onCreateClick={onCreateClick} initialAmount={initialAmount} />
+            <EmptyVaultsState onCreateClick={onCreateClick} initialAmount={initialAmount} />
           ) : (
             <p className="description" style={{ textAlign: 'center', marginTop: '1rem' }}>
-              No active reserves.
+              No active vaults.
             </p>
           )
         ) : (
@@ -145,7 +145,7 @@ export default function DepositsList({ onCreateClick, initialAmount }: DepositsL
 
       {showExportKeyModal && selectedDeposit !== null && (
         <ExportKeyModal
-          reserveIndex={selectedDeposit}
+          vaultIndex={selectedDeposit}
           onClose={() => {
             setShowExportKeyModal(false);
             setSelectedDeposit(null);

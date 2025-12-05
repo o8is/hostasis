@@ -115,7 +115,7 @@
   font-size: 0.8rem;
   color: #a0a0a0;
   overflow-x: auto;
-  white-space: pre-wrap;
+  white-space: pre;
   margin: 0;
 }
 
