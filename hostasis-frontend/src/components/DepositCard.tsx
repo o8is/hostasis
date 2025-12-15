@@ -225,21 +225,12 @@ export default function DepositCard({
                       }
                     ]
 
-                    // Add feed manifest (always points to latest) - stored hash
+                    // Add feed hash (for DNSLink/ENS setup)
                     if (project.manifestReference) {
                       copyOptions.push({
-                        label: 'Feed Manifest',
+                        label: 'Feed Hash',
                         value: project.manifestReference,
-                        description: 'Always latest version'
-                      })
-                    }
-
-                    // Add swarm reference (specific version snapshot) - cached, could fetch live
-                    if (project.currentVersion) {
-                      copyOptions.push({
-                        label: 'Swarm Reference',
-                        value: project.currentVersion,
-                        description: 'Specific version'
+                        description: 'For DNSLink/ENS'
                       })
                     }
 
@@ -287,21 +278,12 @@ export default function DepositCard({
               }
             ]
 
-            // Add feed manifest (always points to latest) - stored hash
+            // Add feed hash (for DNSLink/ENS setup)
             if (feedReference) {
               copyOptions.push({
-                label: 'Feed Manifest',
+                label: 'Feed Hash',
                 value: feedReference,
-                description: 'Always latest version'
-              })
-            }
-
-            // Add swarm reference (specific version snapshot) - cached
-            if (currentVersion) {
-              copyOptions.push({
-                label: 'Swarm Reference',
-                value: currentVersion,
-                description: 'Specific version'
+                description: 'For DNSLink/ENS'
               })
             }
 
