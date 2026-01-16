@@ -4,7 +4,7 @@ import { useStorageCalculator } from '../hooks/useStorageCalculator';
 import { getPlanTierName, getTierNameByDepth } from '../utils/storagePlan';
 
 const StorageCalculator: React.FC = () => {
-  const [storageAmount, setStorageAmount] = useState<string>('50');
+  const [storageAmount, setStorageAmount] = useState<string>('5');
   const [storageUnit, setStorageUnit] = useState<'MB' | 'GB'>('MB');
   const [showBreakdown, setShowBreakdown] = useState(false);
 
