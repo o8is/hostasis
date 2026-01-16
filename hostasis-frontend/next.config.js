@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ['@rainbow-me/rainbowkit'],
+  transpilePackages: ['@rainbow-me/rainbowkit', '@hostasis/swarm-stamper'],
   webpack: (config) => {
     config.externals.push('pino-pretty', 'lokijs', 'encoding');
     config.resolve.alias = {

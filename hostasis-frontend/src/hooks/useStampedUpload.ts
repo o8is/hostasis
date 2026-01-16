@@ -57,13 +57,14 @@ export function useStampedUpload(): UseStampedUploadReturn {
       }
 
       // Create uploader instance
-      // Infinity lets browser manage via HTTP/2 multiplexing
+      // Limit concurrency to get predictable progress tracking
+      // (Infinity can cause browser to queue requests internally which skews progress)
       const uploader = new StampedUploader({
         gatewayUrl: gatewayUrl || SWARM_GATEWAY_URL,
         batchId,
         privateKey: batchOwnerPrivateKey, // Vault key owns the batch
         depth,
-        concurrency: Infinity,
+        concurrency: 50,
       });
 
       // Upload with progress tracking

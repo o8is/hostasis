@@ -19,6 +19,7 @@ import { useStampedUpload } from '../hooks/useStampedUpload';
 import { useFeedService } from '../hooks/useFeedService';
 import { formatBZZ } from '../utils/bzzFormat';
 import { saveUpload } from '../utils/uploadHistory';
+import { buildSwarmUrl } from '../utils/swarmUrl';
 import { deriveVaultKey } from '../utils/vaultKeys';
 import {
   normalizeProjectSlug,
@@ -37,7 +38,7 @@ import {
 import { deriveProjectKey } from '@hostasis/swarm-stamper';
 import styles from './upload.module.css';
 
-type UploadStep = 'drop' | 'config' | 'deploying' | 'complete';
+type UploadStep = 'drop' | 'config' | 'deploying' | 'preview' | 'complete';
 
 interface UploadState {
   files: File[];
@@ -54,6 +55,9 @@ interface UploadState {
   swarmReference?: string;
   manifestUrl?: string;
   vaultIndex?: number;
+  // Preview (for updates)
+  previewUrl?: string;
+  depth?: number;
 }
 
 const Upload: NextPage = () => {
@@ -328,54 +332,7 @@ const Upload: NextPage = () => {
         { isSPA: state.isSPA }
       );
 
-      // Step 3: Create or update project feed
-      let manifestUrl: string;
-
-      if (isUpdateMode) {
-        // Update existing project
-        setCurrentAction('Updating project feed...');
-
-        await feedService.deployToProject(
-          vaultIndex,
-          state.projectSlug,
-          stampId,
-          depth,
-          uploadResult.reference
-        );
-
-        // Get the existing manifest URL
-        manifestUrl = existingProject!.manifestUrl;
-      } else {
-        // Create new project
-        setCurrentAction('Creating project feed...');
-
-        const projectKey = deriveProjectKey(vaultKey.privateKey, state.projectSlug);
-
-        // Add project to vault first (manifestUrl will be updated by initializeProjectFeed)
-        const now = Date.now();
-        const projectData = {
-          slug: state.projectSlug,
-          displayName: state.projectName,
-          feedOwnerAddress: projectKey.address,
-          manifestUrl: '', // Will be set by initializeProjectFeed
-          currentVersion: uploadResult.reference,
-          currentIndex: 0,
-          createdAt: now,
-          updatedAt: now,
-        };
-        addProject(vaultIndex, projectData);
-
-        // Initialize the feed - this creates the SOC, manifest, and updates the project's manifestUrl
-        manifestUrl = await feedService.initializeProjectFeed(
-          vaultIndex,
-          state.projectSlug,
-          stampId,
-          depth,
-          uploadResult.reference
-        );
-      }
-
-      // Save upload record
+      // Determine if this is a website (for building preview URL)
       const isWebsite = state.files.some(f =>
         f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
       );
@@ -383,6 +340,54 @@ const Upload: NextPage = () => {
         f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
       )?.name;
 
+      // For updates: Go to preview step instead of immediately updating the feed
+      if (isUpdateMode) {
+        const previewUrl = buildSwarmUrl(uploadResult.reference, {
+          isWebsite,
+          indexDocument,
+          isSPA: state.isSPA,
+        });
+
+        setState(prev => ({
+          ...prev,
+          step: 'preview',
+          previewUrl,
+          swarmReference: uploadResult.reference,
+          depth,
+          vaultIndex,
+        }));
+        return;
+      }
+
+      // Step 3: Create new project feed (new deploys only)
+      setCurrentAction('Creating project feed...');
+
+      const projectKey = deriveProjectKey(vaultKey.privateKey, state.projectSlug);
+
+      // Add project to vault first (manifestUrl will be updated by initializeProjectFeed)
+      const now = Date.now();
+      const projectData = {
+        slug: state.projectSlug,
+        displayName: state.projectName,
+        feedOwnerAddress: projectKey.address,
+        manifestUrl: '', // Will be set by initializeProjectFeed
+        currentVersion: uploadResult.reference,
+        currentIndex: 0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      addProject(vaultIndex, projectData);
+
+      // Initialize the feed - this creates the SOC, manifest, and updates the project's manifestUrl
+      const manifestUrl = await feedService.initializeProjectFeed(
+        vaultIndex,
+        state.projectSlug,
+        stampId,
+        depth,
+        uploadResult.reference
+      );
+
+      // Save upload record
       saveUpload({
         batchId: stampId,
         reference: uploadResult.reference,
@@ -457,6 +462,118 @@ const Upload: NextPage = () => {
     resetUpload();
     setCurrentAction('');
     setDeployError(null);
+  };
+
+  // Push live: Update the feed to point to the new content (preview → complete)
+  const handlePushLive = async () => {
+    if (!state.swarmReference || state.vaultIndex === undefined || !state.depth) {
+      setDeployError('Missing required data for publishing');
+      return;
+    }
+
+    setDeployError(null);
+    setState(prev => ({ ...prev, step: 'deploying' }));
+    setCurrentAction('Publishing update...');
+
+    try {
+      // Re-authenticate with passkey
+      setCurrentAction('Authenticating with passkey...');
+      let passkeyInfo = passkeyWallet;
+      if (!passkeyInfo) {
+        passkeyInfo = await authenticatePasskeyWallet();
+      }
+      if (!passkeyInfo) {
+        throw new Error('Failed to authenticate passkey wallet');
+      }
+
+      // Get the stamp ID from contract
+      const deposit = await publicClient?.readContract({
+        address: POSTAGE_MANAGER_ADDRESS,
+        abi: PostageManagerABI,
+        functionName: 'getUserDeposit',
+        args: [address, BigInt(state.vaultIndex)],
+      }) as any;
+
+      if (!deposit?.stampId) throw new Error('No stamp found for vault');
+
+      const stampId = deposit.stampId;
+
+      // Update the feed
+      setCurrentAction('Updating project feed...');
+      await feedService.deployToProject(
+        state.vaultIndex,
+        state.projectSlug,
+        stampId,
+        state.depth,
+        state.swarmReference
+      );
+
+      // Get the manifest URL from project data
+      const manifestUrl = feedService.getProjectManifestUrl(state.vaultIndex, state.projectSlug);
+      if (!manifestUrl) {
+        throw new Error('Failed to get manifest URL after deployment');
+      }
+
+      // Determine if this is a website
+      const isWebsite = state.files.some(f =>
+        f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+      );
+      const indexDocument = state.files.find(f =>
+        f.name.toLowerCase() === 'index.html' || f.name.toLowerCase() === 'index.htm'
+      )?.name;
+
+      // Save upload record
+      saveUpload({
+        batchId: stampId,
+        reference: state.swarmReference,
+        files: state.files.map(f => ({
+          name: f.name,
+          size: f.size,
+          type: f.type,
+        })),
+        totalSize: state.totalSize,
+        metadata: {
+          isWebsite,
+          indexDocument,
+          isSPA: state.isSPA,
+        },
+      });
+
+      setState(prev => ({
+        ...prev,
+        step: 'complete',
+        swarmUrl: manifestUrl,
+      }));
+
+      // Refresh vaults list
+      setVaults(getAllVaults());
+
+    } catch (err) {
+      console.error('Push live failed:', err);
+      setDeployError(err instanceof Error ? err.message : 'Failed to publish update');
+      setState(prev => ({ ...prev, step: 'preview' }));
+    }
+  };
+
+  // Upload new version: Reset to file drop while keeping project context
+  const handleUploadNewVersion = () => {
+    setState(prev => ({
+      ...prev,
+      files: [],
+      totalSize: 0,
+      step: 'drop',
+      previewUrl: undefined,
+      swarmReference: undefined,
+      // Keep project context (name, slug, vault) for the next upload
+    }));
+    resetUpload();
+    setCurrentAction('');
+    setDeployError(null);
+  };
+
+  // Cancel preview: Go back to vault view
+  const handleCancelPreview = () => {
+    router.push('/vaults');
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -712,12 +829,73 @@ const Upload: NextPage = () => {
             </div>
           )}
 
+          {state.step === 'preview' && state.previewUrl && (
+            <div className={styles.preview}>
+              <div className={styles.previewIcon}>✓</div>
+              <h2>Upload complete! Preview your changes:</h2>
+
+              <div className={styles.previewCard}>
+                <a
+                  href={state.previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={styles.viewPreviewCta}
+                >
+                  View Preview ↗
+                </a>
+
+                <div className={styles.previewDivider}>
+                  <span>Your live site has not been updated yet</span>
+                </div>
+
+                {deployError && (
+                  <div className={styles.error}>
+                    <p>{deployError}</p>
+                  </div>
+                )}
+
+                <div className={styles.previewActions}>
+                  <button
+                    onClick={handlePushLive}
+                    className={styles.ctaButton}
+                    disabled={isProcessing}
+                  >
+                    {isProcessing ? 'Publishing...' : 'Push Live'}
+                  </button>
+                  <button
+                    onClick={handleUploadNewVersion}
+                    className={styles.secondaryButton}
+                    disabled={isProcessing}
+                  >
+                    Upload New Version
+                  </button>
+                  <button
+                    onClick={handleCancelPreview}
+                    className={styles.tertiaryButton}
+                    disabled={isProcessing}
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <p className={styles.previewWarning}>
+                  Canceling will leave this upload unpublished. You can upload a new version to replace it.
+                </p>
+              </div>
+            </div>
+          )}
+
           {state.step === 'complete' && (
             <div className={styles.complete}>
               <div className={styles.completeIcon}>✓</div>
               <h2>{isUpdateMode ? 'Update published!' : 'Deploy successful!'}</h2>
 
               {state.swarmUrl && (() => {
+                // Get feed hash from project data
+                const vaultData = state.vaultIndex !== undefined ? getVaultData(state.vaultIndex) : undefined;
+                const projectData = vaultData?.projects.find(p => p.slug === state.projectSlug);
+                const feedHash = projectData?.manifestReference;
+
                 const copyOptions: CopyOption[] = [
                   {
                     label: 'Live URL',
@@ -726,11 +904,21 @@ const Upload: NextPage = () => {
                   }
                 ];
 
+                // Add feed hash (for DNSLink/ENS)
+                if (feedHash) {
+                  copyOptions.push({
+                    label: 'Feed Hash',
+                    value: feedHash,
+                    description: 'For DNSLink/ENS'
+                  });
+                }
+
+                // Add content hash (this specific version)
                 if (state.swarmReference) {
                   copyOptions.push({
-                    label: 'Swarm Reference',
+                    label: 'Content Hash',
                     value: state.swarmReference,
-                    description: 'Content hash'
+                    description: 'This version (immutable)'
                   });
                 }
 

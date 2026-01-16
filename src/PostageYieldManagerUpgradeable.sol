@@ -13,9 +13,6 @@ import {IUniswapV3Pool} from "./interfaces/IUniswapV3Pool.sol";
 
 /// @title PostageYieldManagerUpgradeable
 /// @notice Manages sDAI deposits and redirects yield to Swarm postage stamps (Upgradeable)
-/// @dev Uses shares-based accounting: user sDAIAmount values are fixed shares, only global totalSDAI changes
-/// @dev Tracks principal in DAI terms to prevent yield theft between depositors
-/// @dev Uses Transparent Proxy pattern - upgrade logic handled by ProxyAdmin
 contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
@@ -678,7 +675,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         if (bzzAmount < minBZZ) revert SlippageTooHigh();
     }
 
-    /// @notice UniswapV3 swap callback - called by pool to receive payment
+    /// @notice UniswapV3 swap callback, called by pool to receive payment
     /// @param amount0Delta The amount of token0 that was sent (negative) or must be received (positive)
     /// @param amount1Delta The amount of token1 that was sent (negative) or must be received (positive)
     /// @param data Callback data containing expected DAI amount

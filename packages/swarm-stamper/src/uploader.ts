@@ -386,36 +386,34 @@ export class StampedUploader {
 
       totalChunksToUpload.count = chunks.length;
 
-      // Wait for stamp to be ready before stamping
+      // Wait for stamp to be ready before uploading
       await stampReadyPromise;
 
-      // Phase 1: Pre-stamp all chunks (CPU-bound, synchronous)
-      onProgress({
-        phase: 'stamping',
-        message: `Stamping ${chunks.length} chunks...`,
-        percentage: 20
-      });
-
-      const stampedChunks = chunks.map(chunk => this.stampChunk(chunk));
-
-      // Phase 2: Upload all pre-stamped chunks in parallel (network I/O only)
+      // Streaming pipeline: stamp and upload each chunk together
+      // This keeps UI responsive and provides accurate progress tracking
       onProgress({
         phase: 'uploading',
         message: `Uploading ${chunks.length} chunks...`,
-        percentage: 30
+        percentage: 20
       });
 
       uploadStartTime = Date.now();
-      const chunkUploads = stampedChunks.map(stamped =>
+      let pendingRequests = 0;
+      const chunkUploads = chunks.map(chunk =>
         this.limit(async () => {
+          // Stamp and upload in one operation (CPU + I/O overlap across concurrent tasks)
+          const stamped = this.stampChunk(chunk);
+          pendingRequests++;
           await this.uploadStampedChunk(stamped);
+          pendingRequests--;
           chunksUploaded++;
+          console.log(`Chunk done: ${chunksUploaded}/${totalChunksToUpload.count}, still pending: ${pendingRequests}`);
           if (chunksUploaded % progressInterval === 0 || chunksUploaded === totalChunksToUpload.count) {
             const elapsed = Date.now() - uploadStartTime;
             const rate = chunksUploaded / (elapsed / 1000);
             const remaining = totalChunksToUpload.count - chunksUploaded;
             const eta = rate > 0 ? remaining / rate : 0;
-            const percentage = 30 + (chunksUploaded / totalChunksToUpload.count) * 40;
+            const percentage = 20 + (chunksUploaded / totalChunksToUpload.count) * 50;
 
             onProgress({
               phase: 'uploading',
@@ -431,6 +429,7 @@ export class StampedUploader {
       );
 
       await Promise.all(chunkUploads);
+      console.log(`All chunk uploads resolved. Pending requests: ${pendingRequests}`);
 
       // Create a manifest for the single file
       onProgress({
@@ -537,41 +536,38 @@ export class StampedUploader {
 
     const allFileChunks = await Promise.all(fileChunkPromises);
 
-    // Collect all chunks for pre-stamping
+    // Collect all chunks for uploading
     const allChunks = allFileChunks.flatMap(fileData => fileData.chunks);
     totalChunksToUpload.count = allChunks.length;
 
-    // Wait for stamp to be ready before stamping (may already be done if chunking took a while)
+    // Wait for stamp to be ready before uploading (may already be done if chunking took a while)
     await stampReadyPromise;
 
-    // Phase 1: Pre-stamp all chunks (CPU-bound, synchronous)
-    // This separates CPU work from network I/O for true parallelism
-    onProgress({
-      phase: 'stamping',
-      message: `Stamping ${totalChunksToUpload.count} chunks...`,
-      percentage: 25
-    });
-
-    const stampedChunks = allChunks.map(chunk => this.stampChunk(chunk));
-
-    // Phase 2: Upload all pre-stamped chunks in parallel (network I/O only)
+    // Streaming pipeline: stamp and upload each chunk together
+    // This keeps UI responsive and provides accurate progress tracking
     onProgress({
       phase: 'uploading',
       message: `Uploading ${totalChunksToUpload.count} chunks...`,
-      percentage: 30
+      percentage: 20
     });
 
     uploadStartTime = Date.now();
-    const allChunkUploads = stampedChunks.map(stamped =>
+    let pendingRequests = 0;
+    const allChunkUploads = allChunks.map(chunk =>
       this.limit(async () => {
+        // Stamp and upload in one operation (CPU + I/O overlap across concurrent tasks)
+        const stamped = this.stampChunk(chunk);
+        pendingRequests++;
         await this.uploadStampedChunk(stamped);
+        pendingRequests--;
         chunksUploaded++;
+        console.log(`Chunk done: ${chunksUploaded}/${totalChunksToUpload.count}, still pending: ${pendingRequests}`);
         if (chunksUploaded % progressInterval === 0 || chunksUploaded === totalChunksToUpload.count) {
           const elapsed = Date.now() - uploadStartTime;
           const rate = chunksUploaded / (elapsed / 1000);
           const remaining = totalChunksToUpload.count - chunksUploaded;
           const eta = rate > 0 ? remaining / rate : 0;
-          const percentage = 30 + (chunksUploaded / totalChunksToUpload.count) * 50;
+          const percentage = 20 + (chunksUploaded / totalChunksToUpload.count) * 60;
 
           onProgress({
             phase: 'uploading',
@@ -587,6 +583,7 @@ export class StampedUploader {
     );
 
     await Promise.all(allChunkUploads);
+    console.log(`All chunk uploads resolved. Pending requests: ${pendingRequests}`);
 
     // Build file entries
     const fileEntries: FileEntry[] = allFileChunks.map(fileData => ({
