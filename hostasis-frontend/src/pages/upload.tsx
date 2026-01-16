@@ -1013,7 +1013,7 @@ const Upload: NextPage = () => {
             <h3>Put your project online</h3>
             <p>
               Drag and drop your project folder, and your project will be
-              deployed to decentralized Swarm storage. Truly permanent.
+              deployed to decentralized Swarm storage.
             </p>
           </div>
 
@@ -1021,7 +1021,7 @@ const Upload: NextPage = () => {
             <h3>Fund with yield</h3>
             <p>
               Your vault deposit earns yield that automatically pays for
-              storage. No subscriptions, no renewals, no monthly bills.
+              storage. No subscriptions, no renewals.
             </p>
           </div>
 
