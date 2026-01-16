@@ -30,10 +30,10 @@ const Home: NextPage = () => {
             Pay once. Host forever.
           </h1>
           <p className="hero-subheadline">
-            Your storage is paid for by yield - permanently.
+            Your storage is paid for by yield.
           </p>
           <p className="hero-description">
-            Deposit into your vault with any supported asset. Your vault earns yield. Hostasis converts that yield into Swarm storage so your files stay online forever - no subscriptions, no monthly bills.
+            Deposit into a vault with any supported asset. Your vault earns yield. Hostasis converts that yield into Swarm storage so your files stay online forever. No subscriptions.
           </p>
         </div>
 
@@ -48,9 +48,6 @@ const Home: NextPage = () => {
 
         {/* Use Cases Section */}
         <UseCases />
-
-        {/* Multi-chain & Future-Proofing Section */}
-        <FutureSection />
 
         {/* Trust & Tech Section */}
         <TrustSection />
