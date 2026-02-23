@@ -46,15 +46,16 @@ export default function DepositForm({
   // Track deposit count to determine new reserve index
   const { data: depositCount, refetch: refetchDepositCount } = useUserDepositCount(address);
 
-  // Fetch batch depth from chain when stampId is provided
-  const normalizedInitialStampId = initialStampId ? ensureBatchIdPrefix(initialStampId) : undefined;
-  const { data: batchDepth } = useReadContract({
+  // Fetch batch depth from chain when stampId is provided (from props or user input)
+  const normalizedStampIdForQuery = stampId ? ensureBatchIdPrefix(stampId) : undefined;
+  const isValidStampIdForQuery = normalizedStampIdForQuery?.match(/^0x[a-fA-F0-9]{64}$/) !== null;
+  const { data: batchDepth, isLoading: isLoadingBatchDepth } = useReadContract({
     address: POSTAGE_STAMP_ADDRESS as `0x${string}`,
     abi: PostageStampABI,
     functionName: 'batchDepth',
-    args: normalizedInitialStampId ? [normalizedInitialStampId] : undefined,
+    args: normalizedStampIdForQuery ? [normalizedStampIdForQuery] : undefined,
     query: {
-      enabled: !!normalizedInitialStampId && normalizedInitialStampId.match(/^0x[a-fA-F0-9]{64}$/) !== null,
+      enabled: !!normalizedStampIdForQuery && isValidStampIdForQuery,
     },
   });
 
@@ -219,9 +220,61 @@ export default function DepositForm({
   const isLoading = conversion.isLoading || isDepositing || isSigning || isConfirming;
   const isValidAmount = amount && parseFloat(amount) > 0;
 
+  // Helper to format capacity
+  const formatCapacity = (bytes: number): string => {
+    const gb = bytes / (1024 * 1024 * 1024);
+    if (gb >= 1) return `${gb.toFixed(2)} GB`;
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(2)} MB`;
+  };
+
   const formContent = (
     <>
       {!isModal && <h3 style={{ marginTop: 0 }}>Create Vault</h3>}
+
+      {/* Batch ID input - first so user enters this before amount */}
+      <div className="hash-input-container" style={{ marginTop: '0', marginBottom: '0.5rem' }}>
+        <input
+          type="text"
+          className="hash-input"
+          placeholder="Swarm Batch ID (00...)"
+          value={stampId}
+          onChange={(e) => setStampId(e.target.value)}
+          disabled={isLoading}
+        />
+      </div>
+
+      {/* Batch info display */}
+      {stampId && isValidStampIdForQuery && isLoadingBatchDepth && (
+        <p className="description" style={{ fontSize: '0.85rem', color: '#4a9eff', marginTop: '0.5rem', marginBottom: '1rem' }}>
+          Fetching batch info...
+        </p>
+      )}
+      {stampId && isValidStampIdForQuery && !isLoadingBatchDepth && batchDepth && Number(batchDepth) > 0 && (
+        <div style={{ 
+          marginTop: '0.5rem', 
+          marginBottom: '1rem',
+          padding: '0.75rem', 
+          background: 'rgba(74, 158, 255, 0.1)', 
+          borderRadius: '8px',
+          fontSize: '0.85rem'
+        }}>
+          <div style={{ color: '#4a9eff', marginBottom: '0.25rem' }}>✓ Batch found</div>
+          <div style={{ color: '#b0b0b0' }}>
+            Depth: {Number(batchDepth)} · Capacity: {formatCapacity(EFFECTIVE_CAPACITY_BYTES[Number(batchDepth)] || Math.pow(2, Number(batchDepth)) * 4096)}
+          </div>
+          {calculatedRecommendedDAI && (
+            <div style={{ color: '#b0b0b0', marginTop: '0.25rem' }}>
+              Recommended deposit: ~{calculatedRecommendedDAI.toFixed(2)} DAI
+            </div>
+          )}
+        </div>
+      )}
+      {stampId && isValidStampIdForQuery && !isLoadingBatchDepth && (!batchDepth || Number(batchDepth) === 0) && (
+        <p className="description" style={{ fontSize: '0.85rem', color: '#ff6b6b', marginTop: '0.5rem', marginBottom: '1rem' }}>
+          Batch not found on-chain
+        </p>
+      )}
 
       <p className="description">
         Available: <TokenAmount value={balance} symbol={tokenLabel} />
@@ -276,17 +329,6 @@ export default function DepositForm({
         Use max amount
       </button>
 
-      <div className="hash-input-container" style={{ marginTop: '0' }}>
-        <input
-          type="text"
-          className="hash-input"
-          placeholder="Swarm Batch ID (00...)"
-          value={stampId}
-          onChange={(e) => setStampId(e.target.value)}
-          disabled={isLoading}
-        />
-      </div>
-
       {error && <p className="error-message">{error}</p>}
 
       {isDeposited && <p className="success-message">Vault created successfully!</p>}
@@ -294,6 +336,18 @@ export default function DepositForm({
       {!conversion.currentToken && (
         <p className="error-message">You need xDAI, wxDAI, or sDAI to create a vault</p>
       )}
+
+      <div style={{
+        background: 'rgba(255, 107, 53, 0.1)',
+        border: '1px solid rgba(255, 107, 53, 0.3)',
+        borderRadius: '8px',
+        padding: '0.75rem',
+        marginBottom: '1rem',
+        fontSize: '0.85rem',
+        color: '#ccc',
+      }}>
+        <strong style={{ color: '#ff6b35' }}>Alpha:</strong> This contract is unaudited. Only deposit what you're comfortable losing.
+      </div>
 
       <div className="button-group">
         {onCancel && (

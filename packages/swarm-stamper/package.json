@@ -1,6 +1,6 @@
 {
   "name": "@hostasis/swarm-stamper",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "Client-side stamping and upload for Swarm.",
   "type": "module",
   "main": "dist/index.js",

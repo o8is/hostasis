@@ -1,13 +1,17 @@
 /* Custom enhancements for Hostasis while maintaining O8 brand */
 /* Color system is imported from @o8is/brand/o8-brand.css */
 
+:root {
+  --alpha-banner-height: 0px;
+}
+
 /* ===========================================
    NAVIGATION BAR
    =========================================== */
 
 .nav-bar {
   position: fixed;
-  top: 0;
+  top: var(--alpha-banner-height);
   left: 0;
   right: 0;
   z-index: 100;
@@ -225,9 +229,9 @@
   }
 }
 
-/* Adjust body padding to account for fixed nav */
+/* Adjust body padding to account for fixed nav + alpha banner */
 body {
-  padding-top: 80px; /* Height of nav bar */
+  padding-top: calc(80px + var(--alpha-banner-height)); /* Height of nav bar + banner */
 }
 
 /* ===========================================

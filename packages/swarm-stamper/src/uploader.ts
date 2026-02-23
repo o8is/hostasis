@@ -10,11 +10,13 @@ import type {
 } from './types.js';
 import {
   normalizeBatchId,
-  swarmHashToCid,
   getContentType,
   buildMantarayManifest,
   saveMantarayNodeRecursively,
-  uploadWithMerkleTree
+  uploadWithMerkleTree,
+  resolveFilePaths,
+  detectDocuments,
+  buildUploadResult
 } from './utils.js';
 
 /**
@@ -357,10 +359,12 @@ export class StampedUploader {
     let chunksUploaded = 0;
     const totalChunksToUpload: { count: number } = { count: 0 };
 
+    const filePaths = resolveFilePaths(files);
+
     // Handle single file upload
     if (files.length === 1) {
       const file = files[0];
-      const filePath = (file as any).webkitRelativePath || file.name;
+      const filePath = filePaths[0];
 
       // Read file while stamp propagates (parallel)
       onProgress({
@@ -407,7 +411,6 @@ export class StampedUploader {
           await this.uploadStampedChunk(stamped);
           pendingRequests--;
           chunksUploaded++;
-          console.log(`Chunk done: ${chunksUploaded}/${totalChunksToUpload.count}, still pending: ${pendingRequests}`);
           if (chunksUploaded % progressInterval === 0 || chunksUploaded === totalChunksToUpload.count) {
             const elapsed = Date.now() - uploadStartTime;
             const rate = chunksUploaded / (elapsed / 1000);
@@ -429,7 +432,6 @@ export class StampedUploader {
       );
 
       await Promise.all(chunkUploads);
-      console.log(`All chunk uploads resolved. Pending requests: ${pendingRequests}`);
 
       // Create a manifest for the single file
       onProgress({
@@ -454,14 +456,7 @@ export class StampedUploader {
         percentage: 100
       });
 
-      const cid = swarmHashToCid(manifestReference);
-      const domain = this.config.gatewayUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-
-      return {
-        reference: manifestReference,
-        url: `https://${cid}.${domain}/${filePath}`,
-        cid
-      };
+      return buildUploadResult(manifestReference, this.config.gatewayUrl, filePath);
     }
 
     // Handle multiple files
@@ -470,21 +465,6 @@ export class StampedUploader {
       message: 'Processing files...',
       percentage: 20
     });
-
-    // Determine if we need to strip a common root folder
-    let rootFolderToStrip = '';
-    const firstFileRelativePath = (files[0] as any).webkitRelativePath;
-
-    if (firstFileRelativePath && firstFileRelativePath.includes('/')) {
-      const potentialRoot = firstFileRelativePath.split('/')[0] + '/';
-      const allHaveRoot = files.every(f => {
-        const path = (f as any).webkitRelativePath || f.name;
-        return path.startsWith(potentialRoot);
-      });
-      if (allHaveRoot) {
-        rootFolderToStrip = potentialRoot;
-      }
-    }
 
     // Pre-read all files in parallel
     onProgress({
@@ -510,12 +490,7 @@ export class StampedUploader {
     }
 
     const fileChunkPromises = files.map(async (file, index): Promise<FileChunkData> => {
-      let filePath = (file as any).webkitRelativePath || file.name;
-
-      // Strip root folder if detected
-      if (rootFolderToStrip && filePath.startsWith(rootFolderToStrip)) {
-        filePath = filePath.substring(rootFolderToStrip.length);
-      }
+      const filePath = filePaths[index];
 
       // Chunk the file without uploading yet
       const chunks: Chunk[] = [];
@@ -561,7 +536,6 @@ export class StampedUploader {
         await this.uploadStampedChunk(stamped);
         pendingRequests--;
         chunksUploaded++;
-        console.log(`Chunk done: ${chunksUploaded}/${totalChunksToUpload.count}, still pending: ${pendingRequests}`);
         if (chunksUploaded % progressInterval === 0 || chunksUploaded === totalChunksToUpload.count) {
           const elapsed = Date.now() - uploadStartTime;
           const rate = chunksUploaded / (elapsed / 1000);
@@ -583,7 +557,6 @@ export class StampedUploader {
     );
 
     await Promise.all(allChunkUploads);
-    console.log(`All chunk uploads resolved. Pending requests: ${pendingRequests}`);
 
     // Build file entries
     const fileEntries: FileEntry[] = allFileChunks.map(fileData => ({
@@ -592,40 +565,7 @@ export class StampedUploader {
       contentType: getContentType(fileData.filePath)
     }));
 
-    // Determine index document
-    let indexDocument = options.indexDocument;
-    if (!indexDocument) {
-      const rootIndex = fileEntries.find(entry => {
-        const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
-        return (path.toLowerCase() === 'index.html' || path.toLowerCase() === 'index.htm');
-      });
-
-      if (rootIndex) {
-        indexDocument = rootIndex.path.startsWith('/') ? rootIndex.path.slice(1) : rootIndex.path;
-      }
-    }
-
-    // Determine error document
-    let errorDocument = options.errorDocument;
-
-    if (options.isSPA && indexDocument) {
-      // SPA mode: rewrite all URLs to index.html
-      errorDocument = indexDocument;
-    } else if (!errorDocument) {
-      // Find 404 error page
-      const errorPage = fileEntries.find(entry => {
-        const path = entry.path.startsWith('/') ? entry.path.slice(1) : entry.path;
-        return (
-          path.toLowerCase() === '404.html' ||
-          path.toLowerCase() === '404/index.html' ||
-          path.toLowerCase() === 'error.html'
-        );
-      });
-
-      if (errorPage) {
-        errorDocument = errorPage.path.startsWith('/') ? errorPage.path.slice(1) : errorPage.path;
-      }
-    }
+    const { indexDocument, errorDocument } = detectDocuments(fileEntries, options);
 
     // Build and upload mantaray manifest
     onProgress({
@@ -651,16 +591,7 @@ export class StampedUploader {
       percentage: 100
     });
 
-    // Convert to CID and use subdomain routing
-    const cid = swarmHashToCid(manifestReference);
-    const domain = this.config.gatewayUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    const url = `https://${cid}.${domain}/`;
-
-    return {
-      reference: manifestReference,
-      url,
-      cid
-    };
+    return buildUploadResult(manifestReference, this.config.gatewayUrl);
   }
 
   /**

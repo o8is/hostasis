@@ -8,6 +8,7 @@ import { config } from '../wagmi';
 import BackgroundCanvas from '../components/BackgroundCanvas';
 import { NetworkStatus } from '../components/NetworkStatus';
 import { PasskeyProvider } from '../contexts/PasskeyContext';
+import AlphaBanner from '../components/AlphaBanner';
 
 import '@rainbow-me/rainbowkit/styles.css';
 import '@o8is/brand/o8-brand.css';
@@ -30,6 +31,7 @@ function MyApp({ Component, pageProps }: AppProps) {
           showRecentTransactions={true}
         >
           <PasskeyProvider>
+            <AlphaBanner />
             <BackgroundCanvas />
             <NetworkStatus />
             <Component {...pageProps} />

@@ -13,7 +13,11 @@ export {
   cidToSwarmHash,
   buildMantarayManifest,
   saveMantarayNodeRecursively,
-  uploadWithMerkleTree
+  uploadWithMerkleTree,
+  resolveFilePaths,
+  detectDocuments,
+  buildUploadResult,
+  computeReference
 } from './utils.js';
 export {
   writeFeedUpdate,
