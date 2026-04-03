@@ -188,6 +188,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @param stampId Swarm postage batch ID (32 bytes)
     /// @return depositIndex Index of the created deposit
     function deposit(uint256 sDAIAmount, bytes32 stampId) external nonReentrant returns (uint256 depositIndex) {
+        if (distributionState.active) revert DistributionInProgress();
         if (sDAIAmount == 0) revert ZeroAmount();
         if (stampId == bytes32(0)) revert InvalidStampId();
 
@@ -235,6 +236,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         nonReentrant
         returns (uint256 depositIndex)
     {
+        if (distributionState.active) revert DistributionInProgress();
         if (sDAIAmount == 0) revert ZeroAmount();
         if (stampId == bytes32(0)) revert InvalidStampId();
 
@@ -276,6 +278,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @param depositIndex Index of the deposit to withdraw from
     /// @param sDAIAmount Amount of sDAI to withdraw
     function withdraw(uint256 depositIndex, uint256 sDAIAmount) external nonReentrant {
+        if (distributionState.active) revert DistributionInProgress();
         if (depositIndex >= userDeposits[msg.sender].length) {
             revert InvalidDepositIndex();
         }
@@ -327,6 +330,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @param depositIndex Index of the deposit to top up
     /// @param sDAIAmount Amount of sDAI to add
     function topUp(uint256 depositIndex, uint256 sDAIAmount) external nonReentrant {
+        if (distributionState.active) revert DistributionInProgress();
         if (depositIndex >= userDeposits[msg.sender].length) {
             revert InvalidDepositIndex();
         }
@@ -368,6 +372,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
         external
         nonReentrant
     {
+        if (distributionState.active) revert DistributionInProgress();
         if (depositIndex >= userDeposits[msg.sender].length) {
             revert InvalidDepositIndex();
         }
@@ -444,7 +449,7 @@ contract PostageYieldManagerUpgradeable is Initializable, OwnableUpgradeable, Re
     /// @notice Harvest yield and prepare for distribution
     /// @dev Swaps (yield - harvester fee - keeper fees) to BZZ, sets up batch distribution
     /// @dev Cannot be called again until processBatch completes (prevents multiple harvest complexity)
-    /// @dev Uses shares-based accounting: user deposit amounts never change, only global totalSDAI changes
+    /// @dev Harvest reduces global totalSDAI immediately; processBatch later applies the same reduction to deposits.
     function harvest() external nonReentrant {
         // Prevent multiple harvests - must complete distribution first
         if (distributionState.active) revert DistributionInProgress();

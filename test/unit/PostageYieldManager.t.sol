@@ -132,6 +132,21 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
     }
 
+    function test_Deposit_RevertDuringActiveDistribution() public {
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 200e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        sdai.setExchangeRate(1.1e18);
+        manager.harvest();
+
+        vm.startPrank(alice);
+        vm.expectRevert(PostageYieldManagerUpgradeable.DistributionInProgress.selector);
+        manager.deposit(50e18, STAMP_ALICE);
+        vm.stopPrank();
+    }
+
     /*//////////////////////////////////////////////////////////////
                     YIELD THEFT PREVENTION TESTS
     //////////////////////////////////////////////////////////////*/
@@ -289,6 +304,21 @@ contract PostageYieldManagerTest is Test {
         vm.stopPrank();
     }
 
+    function test_Withdraw_RevertDuringActiveDistribution() public {
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 100e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        sdai.setExchangeRate(1.1e18);
+        manager.harvest();
+
+        vm.startPrank(alice);
+        vm.expectRevert(PostageYieldManagerUpgradeable.DistributionInProgress.selector);
+        manager.withdraw(0, 10e18);
+        vm.stopPrank();
+    }
+
     /*//////////////////////////////////////////////////////////////
                         UPDATE STAMP ID TESTS
     //////////////////////////////////////////////////////////////*/
@@ -404,6 +434,21 @@ contract PostageYieldManagerTest is Test {
 
         vm.expectRevert(PostageYieldManagerUpgradeable.InvalidDepositIndex.selector);
         manager.topUp(0, 50e18); // No deposit exists yet
+        vm.stopPrank();
+    }
+
+    function test_TopUp_RevertDuringActiveDistribution() public {
+        vm.startPrank(alice);
+        sdai.approve(address(manager), 150e18);
+        manager.deposit(100e18, STAMP_ALICE);
+        vm.stopPrank();
+
+        sdai.setExchangeRate(1.1e18);
+        manager.harvest();
+
+        vm.startPrank(alice);
+        vm.expectRevert(PostageYieldManagerUpgradeable.DistributionInProgress.selector);
+        manager.topUp(0, 50e18);
         vm.stopPrank();
     }
 
