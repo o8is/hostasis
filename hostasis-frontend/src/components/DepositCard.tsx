@@ -12,6 +12,8 @@ import { useStampInfo, formatTimeRemaining } from '../hooks/useStampInfo'
 import { useFeedService } from '../hooks/useFeedService'
 import { hasFeed as checkHasFeed, getCurrentVersion, getFeedManifestReference } from '../utils/feedStorage'
 import { getVaultData, type ProjectData, type VaultTier, VAULT_TIERS } from '../utils/projectStorage'
+import { vaultHasLocalData } from '../utils/vaultRecovery'
+import VaultRecovery from './VaultRecovery'
 
 type Deposit = {
   sDAIAmount: bigint
@@ -51,10 +53,11 @@ export default function DepositCard({
   const [currentFeedIndex, setCurrentFeedIndex] = useState<number | null>(null)
   const [projects, setProjects] = useState<ProjectData[]>([])
   const [projectFeedIndices, setProjectFeedIndices] = useState<Record<string, number | null>>({})
+  const [needsRecovery, setNeedsRecovery] = useState(false)
   const feedService = useFeedService()
   const feedExists = checkHasFeed(depositIndex)
 
-  // Fetch projects for this vault
+  // Fetch projects for this vault, and check if recovery is needed
   useEffect(() => {
     const vault = getVaultData(depositIndex)
     if (vault) {
@@ -64,6 +67,9 @@ export default function DepositCard({
         const prevSlugs = prev.map(p => p.slug).sort().join(',')
         return newSlugs !== prevSlugs ? vault.projects : prev
       })
+      setNeedsRecovery(false)
+    } else {
+      setNeedsRecovery(true)
     }
   }, [depositIndex, refetchTrigger])
 
@@ -180,6 +186,23 @@ export default function DepositCard({
           {depositDate.toLocaleDateString()}
         </span>
       </div>
+
+      {/* Recovery Banner — shown when on-chain vault exists but localStorage data is missing */}
+      {needsRecovery && stampInfo.depth > 0 && (
+        <VaultRecovery
+          vaultIndex={depositIndex}
+          stampDepth={stampInfo.depth}
+          stampId={depositData.stampId}
+          onRecovered={() => {
+            setNeedsRecovery(false)
+            // Re-read vault data after recovery
+            const vault = getVaultData(depositIndex)
+            if (vault) {
+              setProjects(vault.projects)
+            }
+          }}
+        />
+      )}
 
       {/* Projects List */}
       {projects.length > 0 ? (

@@ -176,10 +176,11 @@ function addressBytesToHex(bytes: Uint8Array): string {
 export function useFeedService() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { walletInfo, createPasskeyWallet, authenticatePasskeyWallet } = usePasskeyWallet();
+  const { walletInfo, createPasskeyWallet, authenticatePasskeyWallet, recoverPasskeyWallet } = usePasskeyWallet();
 
   /**
-   * Ensure passkey is authenticated, creating or authenticating as needed
+   * Ensure passkey is authenticated, creating or authenticating as needed.
+   * If localStorage salt is missing, tries largeBlob recovery before creating a new wallet.
    */
   const ensurePasskey = useCallback(async (): Promise<string | null> => {
     if (walletInfo) {
@@ -189,15 +190,22 @@ export function useFeedService() {
     const passkeyExists = hasPasskeyWallet();
 
     try {
-      const info = passkeyExists
-        ? await authenticatePasskeyWallet()
-        : await createPasskeyWallet();
+      let info;
+      if (passkeyExists) {
+        info = await authenticatePasskeyWallet();
+      } else {
+        // Try recovery from largeBlob first
+        info = await recoverPasskeyWallet();
+        if (!info) {
+          info = await createPasskeyWallet();
+        }
+      }
       return info.privateKey;
     } catch (err) {
       console.error('[FeedService] Passkey authentication failed:', err);
       return null;
     }
-  }, [walletInfo, authenticatePasskeyWallet, createPasskeyWallet]);
+  }, [walletInfo, authenticatePasskeyWallet, recoverPasskeyWallet, createPasskeyWallet]);
 
   /**
    * Get feed info for a vault (derived from passkey + vault index)

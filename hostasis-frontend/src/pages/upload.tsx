@@ -151,6 +151,7 @@ const Upload: NextPage = () => {
     walletInfo: passkeyWallet,
     createPasskeyWallet,
     authenticatePasskeyWallet,
+    recoverPasskeyWallet,
   } = usePasskeyWallet();
 
   const { createBatchWithVaultWallet, isCreating: isBatchCreating, currentStep } = useVaultBatchCreation();
@@ -251,8 +252,14 @@ const Upload: NextPage = () => {
         if (hasPasskey) {
           passkeyInfo = await authenticatePasskeyWallet();
         } else {
-          setCurrentAction('Creating passkey wallet...');
-          passkeyInfo = await createPasskeyWallet();
+          // No salt in localStorage — try to recover from largeBlob first
+          setCurrentAction('Attempting to recover passkey wallet...');
+          passkeyInfo = await recoverPasskeyWallet();
+          if (!passkeyInfo) {
+            // Recovery failed — create a brand-new wallet
+            setCurrentAction('Creating passkey wallet...');
+            passkeyInfo = await createPasskeyWallet();
+          }
         }
       }
 

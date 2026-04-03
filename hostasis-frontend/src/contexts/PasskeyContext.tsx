@@ -37,6 +37,8 @@ interface PasskeyContextValue {
   walletInfo: PasskeyWalletInfo | null;
   createPasskeyWallet: () => Promise<PasskeyWalletInfo>;
   authenticatePasskeyWallet: () => Promise<PasskeyWalletInfo>;
+  /** Try to recover a lost salt from largeBlob. Returns wallet if recovery succeeds, null if not. */
+  recoverPasskeyWallet: () => Promise<PasskeyWalletInfo | null>;
   clearWallet: () => void;
   error: Error | null;
 }
@@ -290,6 +292,95 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
     }
   }, [deriveWalletFromPRF, walletInfo]);
 
+  /**
+   * Attempt to recover a lost passkey salt from the authenticator's largeBlob.
+   * Call this when localStorage salt is missing before creating a brand-new wallet.
+   * Returns the recovered wallet info, or null if recovery isn't possible.
+   */
+  const recoverPasskeyWallet = useCallback(async (): Promise<PasskeyWalletInfo | null> => {
+    setIsAuthenticating(true);
+    setError(null);
+
+    try {
+      // Step 1: Try to read largeBlob from the authenticator
+      console.log('Attempting passkey salt recovery from largeBlob...');
+      const recoveryChallenge = crypto.getRandomValues(new Uint8Array(32));
+      const recoveryAssertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: recoveryChallenge,
+          timeout: 60000,
+          userVerification: 'required',
+          extensions: {
+            largeBlob: {
+              read: true
+            }
+          }
+        } as any
+      }) as PublicKeyCredential;
+
+      if (!recoveryAssertion) {
+        console.log('No assertion returned during recovery');
+        return null;
+      }
+
+      const recoveryResults = recoveryAssertion.getClientExtensionResults() as any;
+      if (!recoveryResults?.largeBlob?.blob) {
+        console.log('No largeBlob data found on authenticator (may not have been supported at creation)');
+        return null;
+      }
+
+      const blobData = new Uint8Array(recoveryResults.largeBlob.blob);
+      const recoveredSalt = decodeSaltFromBlob(blobData);
+      if (!recoveredSalt) {
+        console.log('Failed to decode salt from largeBlob data');
+        return null;
+      }
+
+      console.log('Salt recovered from largeBlob! Restoring to localStorage...');
+      // Restore salt and credential ID to localStorage
+      storeSalt(recoveredSalt);
+      storeCredentialId(recoveryAssertion.id);
+      setIsConfigured(true);
+
+      // Step 2: Now do a full PRF authentication with the recovered salt
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          timeout: 60000,
+          userVerification: 'required',
+          extensions: {
+            prf: {
+              eval: {
+                first: recoveredSalt
+              }
+            }
+          } as any
+        }
+      }) as PublicKeyCredential;
+
+      if (!assertion) {
+        throw new Error('Failed to authenticate after salt recovery');
+      }
+
+      const extensionResults = assertion.getClientExtensionResults() as any;
+      if (!extensionResults?.prf?.results?.first) {
+        throw new Error('Failed to get PRF output after salt recovery');
+      }
+
+      const prfOutput = new Uint8Array(extensionResults.prf.results.first);
+      const wallet = deriveWalletFromPRF(prfOutput, recoveredSalt);
+      setWalletInfo(wallet);
+      return wallet;
+    } catch (err) {
+      console.warn('Passkey recovery failed:', err);
+      // Don't set error state - recovery failure is not an error, the caller should try creating a new wallet
+      return null;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }, [deriveWalletFromPRF]);
+
   const clearWallet = useCallback(() => {
     setWalletInfo(null);
     setIsConfigured(false);
@@ -304,6 +395,7 @@ export function PasskeyProvider({ children }: { children: ReactNode }) {
         walletInfo,
         createPasskeyWallet,
         authenticatePasskeyWallet,
+        recoverPasskeyWallet,
         clearWallet,
         error,
       }}

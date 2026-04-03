@@ -346,7 +346,7 @@ export default function DepositForm({
         fontSize: '0.85rem',
         color: '#ccc',
       }}>
-        <strong style={{ color: '#ff6b35' }}>Alpha:</strong> This contract is unaudited. Only deposit what you're comfortable losing.
+        <strong style={{ color: '#ff6b35' }}>Alpha:</strong> This contract is unaudited. Only deposit what you&apos;re comfortable losing.
       </div>
 
       <div className="button-group">

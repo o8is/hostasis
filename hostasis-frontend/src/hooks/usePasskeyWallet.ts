@@ -14,6 +14,8 @@ export interface UsePasskeyWalletReturn {
   walletInfo: PasskeyWalletInfo | null;
   createPasskeyWallet: () => Promise<PasskeyWalletInfo>;
   authenticatePasskeyWallet: () => Promise<PasskeyWalletInfo>;
+  /** Try to recover a lost salt from largeBlob. Returns wallet if recovery succeeds, null if not. */
+  recoverPasskeyWallet: () => Promise<PasskeyWalletInfo | null>;
   clearWallet: () => void;
   error: Error | null;
 }
