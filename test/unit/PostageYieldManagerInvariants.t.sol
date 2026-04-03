@@ -177,6 +177,23 @@ contract PostageYieldManagerInvariantTest is StdInvariant, Test {
         console.log("Current totalSDAI:", manager.totalSDAI());
         console.log("Current dust:", sdai.balanceOf(address(manager)) - manager.totalSDAI());
     }
+
+    function test_Regression_HandlerAvoidsManagerCollision() public {
+        uint256 depositActorSeed = 166020153748861866463033272813676692912666046993;
+        uint256 depositAmountSeed = 1545;
+        uint256 withdrawActorSeed = 3931559409;
+        uint256 withdrawAmountSeed = 213927104825466332285;
+
+        handler.deposit(depositActorSeed, depositAmountSeed);
+
+        address actor = handler.actors(0);
+        assertTrue(actor != address(manager), "Handler actor must not collide with manager");
+        assertTrue(actor != address(handler), "Handler actor must not collide with handler");
+
+        handler.withdraw(withdrawActorSeed, withdrawAmountSeed);
+
+        assertEq(sdai.balanceOf(address(manager)), manager.totalSDAI(), "Sequence should not create artificial dust");
+    }
 }
 
 /**
@@ -281,7 +298,7 @@ contract InvariantHandler is Test {
             // Bound withdrawal amount (0 means full withdrawal)
             uint256 withdrawAmount;
             if (amountSeed % 3 == 0) {
-                withdrawAmount = 0; // Full withdrawal
+                withdrawAmount = sDAIAmount; // Full withdrawal
             } else {
                 withdrawAmount = bound(amountSeed, 1, sDAIAmount);
             }
@@ -343,7 +360,15 @@ contract InvariantHandler is Test {
     }
 
     function _createNewActor(uint256 seed) internal returns (address) {
-        address actor = address(uint160(seed));
+        address actor = _deriveActor(seed);
+
+        while (
+            actor == address(0) || actor == address(this) || actor == address(manager) || actor == address(sdai)
+                || actor == address(dai) || actor == address(postageStamp) || isActor[actor]
+        ) {
+            seed = uint256(keccak256(abi.encode(seed, actor, actors.length)));
+            actor = _deriveActor(seed);
+        }
 
         if (!isActor[actor]) {
             actors.push(actor);
@@ -356,6 +381,10 @@ contract InvariantHandler is Test {
         }
 
         return actor;
+    }
+
+    function _deriveActor(uint256 seed) internal view returns (address) {
+        return address(uint160(uint256(keccak256(abi.encode(seed, address(this), address(manager))))));
     }
 
     function _countActiveDepositors() internal view returns (uint256) {
