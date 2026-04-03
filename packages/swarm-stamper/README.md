@@ -4,7 +4,7 @@ Client-side stamping and upload for Swarm with derived reserve keys.
 
 ## Features
 
-- **Client-side stamping**: Sign chunks with your reserve key (no gateway key needed)
+- **Client-side stamping**: Sign chunks with your reserve key
 - **Parallel uploads**: Upload multiple chunks concurrently for maximum speed
 - **Merkle tree support**: Efficient chunking for large files
 - **Manifest creation**: Automatic Mantaray manifest generation for collections
